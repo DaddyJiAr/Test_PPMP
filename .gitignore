@@ -1,0 +1,11 @@
+# Python/Environment files
+.env
+.venv/
+__pycache__/
+*.pyc
+
+# Database
+db.sqlite3
+
+# IDE settings
+.idea/
