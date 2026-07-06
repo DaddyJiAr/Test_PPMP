@@ -26,7 +26,7 @@ SECRET_KEY = 'django-insecure-glvf7#c4@t8gvsk9tg57jju790$mzn9560f@yl8bs32djjee^9
 DEBUG = False
 
 ALLOWED_HOSTS = [
-    'https://test-ppmp.onrender.com'
+    'test-ppmp.onrender.com'
 ]
 
 
