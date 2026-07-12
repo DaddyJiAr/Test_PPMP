@@ -46,7 +46,22 @@ def upload(request):
 @api_view(['GET'])
 def masterlist(request):
     response = private_supabase.table("PPMP_ITEM").select("*").execute()
-    return Response(response.data)
+
+    data = [
+        {
+            "itemId": item["ItemID"],
+            "itemName": item["ItemName"],
+            "unitMeasurement": item["UnitName"],
+            "plannedQuantity": item["PlannedQuantity"],
+            "availableQuantity": item["AvailableQuantity"],
+            "pendingQuantity": item["PendingQuantity"],
+            "fulfilledQuantity": item["ReceivedQuantity"],
+            "priceCatalog": item["PricePerUnit"],
+        }
+        for item in response.data
+    ]
+
+    return Response(data)
 
 
 @api_view(['POST'])
