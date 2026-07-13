@@ -1,19 +1,34 @@
-from rest_framework import response
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 
-from api.services import public_supabase, private_supabase
+from api.services import private_supabase
 from excel import testingPPMP, upload_excel
 
+def get_item_detail(item_id, column_name):
+    response = private_supabase.table("PPMP_ITEM").select(column_name).eq("ItemID", item_id).single().execute()
+    return response.data[column_name]
 
-@api_view(['GET'])
-def getData(request):
-    response = public_supabase.table("FISCAL_YEAR").select("*").execute()
-    print(response.data)
-    return Response(response.data)
+def get_ppmp_items(year):
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
+    return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).execute()
+
+def get_headers(ppmp_items):
+    total_planned_item_count = 0
+    total_available_item_count = 0
+    total_pending_item_count = 0
+    total_fulfilled_item_count = 0
+
+    for ppmp_item in ppmp_items.data:
+        total_planned_item_count += ppmp_item["PlannedQuantity"]
+        total_available_item_count += ppmp_item["AvailableQuantity"]
+        total_pending_item_count += ppmp_item["PendingQuantity"]
+        total_fulfilled_item_count += ppmp_item["ReceivedQuantity"]
+
+    return total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count
+
 
 @api_view(['POST'])
-def testPPMP(request):
+def get_ppmp_preview(request):
     excel_file = request.FILES["file"]
     row_start = int(request.POST["startRow"])
     name_column = int(request.POST["itemName"])
@@ -50,10 +65,49 @@ def fiscal_years(request):
     response = private_supabase.table("FISCAL_YEAR").select("Year").execute()
     return Response(response.data)
 
-@api_view(['GET'])
-def masterlist(request):
-    response = private_supabase.table("PPMP_ITEM").select("*").execute()
+@api_view(['POST'])
+def dashboard_cards(request):
+    year = request.POST["year"]
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
+    total_annual_budget = fiscal_year.data["TotalABC"]
+    ppmp_items = get_ppmp_items(year)
+    item_ids = list({
+        item["ItemID"]
+        for item in ppmp_items.data
+        if item["ItemID"] is not None
+    })
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("ItemID", item_ids).execute()
+    committed_funds = 0
+    requested_funds = 0
+    available_lieu_pool_funds = 0
+    arrived_funds = 0 # lapa
+    pending_in_lieu_count = 0 #lapa
+    for purchase_request in purchase_requests.data:
+        purchase_request_item = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", purchase_request["ItemID"]).eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).single().execute()
+        committed_funds += purchase_request_item.data["PricePerUnit"] * purchase_request["RequestQuantity"] #include arrived items (kulang pa)
+        requested_funds += purchase_request_item.data["PricePerUnit"] * purchase_request["RequestQuantity"] #lahat ng nasa pr (tama lang to)
+    for ppmp_item in ppmp_items.data:
+        available_lieu_pool_funds += ppmp_item["AvailableQuantity"] * ppmp_item["PricePerUnit"]
+    open_funds = total_annual_budget - available_lieu_pool_funds
+    logs = "" #lapa
+    return Response({"totalAnnualBudget": total_annual_budget,
+                     "committedFunds": committed_funds,
+                     "availableLieuPoolFunds": available_lieu_pool_funds,
+                     "openFunds": open_funds,
+                     "requestedFunds": requested_funds,
+                     "arrivedFunds": arrived_funds,
+                     "pendingInLieuCount": pending_in_lieu_count,
+                     "logs": logs
+                     })
 
+@api_view(['POST'])
+def masterlist(request):
+    year = request.POST["year"]
+    fiscal_year_id = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).single().execute()
+    if fiscal_year_id is None:
+        return Response({"error": "year not found"}, status=404)
+    response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year_id.data["FiscalYearID"]).execute()
+    # return Response({"error": fiscal_year_id.data["FiscalYearID"]}, status=404)
     data = [
         {
             "itemId": item["ItemID"],
@@ -70,6 +124,23 @@ def masterlist(request):
 
     return Response(data)
 
+@api_view(['POST'])
+def masterlist_cards(request):
+    year = request.POST["year"]
+    ppmp_items = get_ppmp_items(year)
+
+    total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count = get_headers(ppmp_items)
+    total_planned_funds = 0
+
+    for ppmp_item in ppmp_items.data:
+        total_planned_funds += ppmp_item["PlannedQuantity"] * ppmp_item["PricePerUnit"]
+
+    return Response({"totalPlannedItemCount": total_planned_item_count,
+                     "totalAvailableItemCount": total_available_item_count,
+                     "totalPendingItemCount": total_pending_item_count,
+                     "totalFulfilledItemCount": total_fulfilled_item_count,
+                     "totalPlannedFunds": total_planned_funds,
+                     })
 
 @api_view(['POST'])
 def purchase_request(request):
@@ -101,36 +172,20 @@ def purchase_request(request):
     }).eq("ItemID", item_id).execute()
     return Response({"status": "success"})
 
-def get_item_detail(item_id, column_name):
-    response = private_supabase.table("PPMP_ITEM").select(column_name).eq("ItemID", item_id).single().execute()
-    return response.data[column_name]
 
 @api_view(['POST'])
-def dashboard_cards(request):
+def procurement_cards(request):
     year = request.POST["year"]
-    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
-    total_annual_budget = fiscal_year.data["TotalABC"]
-    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").execute()
-    ppmp_items = private_supabase.table("PPMP_ITEM").select("*").execute()
-    committed_funds = 0
-    requested_funds = 0
-    available_lieu_pool_funds = 0
-    arrived_funds = 0 # lapa
-    pending_in_lieu_count = 0 #lapa
-    for purchase_request in purchase_requests.data:
-        purchase_request_item = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", purchase_request["ItemID"]).single().execute()
-        committed_funds += purchase_request_item.data["PricePerUnit"] * purchase_request["RequestQuantity"] #include arrived items (kulang pa)
-        requested_funds += purchase_request_item.data["PricePerUnit"] * purchase_request["RequestQuantity"] #lahat ng nasa pr (tama lang to)
-    for ppmp_item in ppmp_items.data:
-        available_lieu_pool_funds += ppmp_item["AvailableQuantity"] * ppmp_item["PricePerUnit"]
-    open_funds = total_annual_budget - available_lieu_pool_funds
-    logs = "" #lapa
-    return Response({"totalAnnualBudget": total_annual_budget,
-                     "committedFunds": committed_funds,
-                     "availableLieuPoolFunds": available_lieu_pool_funds,
-                     "openFunds": open_funds,
-                     "requestedFunds": requested_funds,
-                     "arrivedFunds": arrived_funds,
-                     "pendingInLieuCount": pending_in_lieu_count,
-                     "logs": logs
+    ppmp_items = get_ppmp_items(year)
+
+    total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count = get_headers(ppmp_items)
+
+    return Response({"totalPlannedItemCount": total_planned_item_count,
+                     "totalAvailableItemCount": total_available_item_count,
+                     "totalPendingItemCount": total_pending_item_count,
+                     "totalFulfilledItemCount": total_fulfilled_item_count,
                      })
+
+
+# @api_view(['POST'])
+# def procurement_cards(request):
