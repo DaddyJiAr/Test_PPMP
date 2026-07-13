@@ -4,6 +4,10 @@ from rest_framework.decorators import api_view
 from api.services import private_supabase
 from excel import testingPPMP, upload_excel
 
+def get_item(item_id):
+    response = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", item_id).single().execute()
+    return response.data
+
 def get_item_detail(item_id, column_name):
     response = private_supabase.table("PPMP_ITEM").select(column_name).eq("ItemID", item_id).single().execute()
     return response.data[column_name]
@@ -233,3 +237,16 @@ def procurement_data(request):
                      "totalFulfilledItemCount": total_fulfilled_item_count,
                      "ppmpMonitoringData": data
                      })
+
+@api_view(["PUT"])
+def update_purchase_request_status(request):
+    pr_id = request.data["prId"]
+    status = request.data["status"]
+    try:
+        response = private_supabase.table("PURCHASE_REQUEST").select("*").eq("PurchaseRequestID", pr_id).execute()
+        if not response.data:
+            return Response({"status": "PurchaseRequest does not exist"}, status=404)
+        private_supabase.table("PURCHASE_REQUEST").update({"Status": status}).eq("PurchaseRequestID", pr_id).execute()
+    except Exception as e:
+        return Response({"error": str(e)})
+    return Response({"status": "success"}, status=200)
