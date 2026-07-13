@@ -7,6 +7,7 @@ urlpatterns = [
     path('ppmp/', views.testPPMP),
     path('import/', views.upload),
     path('masterlist/', views.masterlist),
+    path('fiscal_years/', views.fiscal_years),
     path('purchase_request/', views.purchase_request),
 
 ]

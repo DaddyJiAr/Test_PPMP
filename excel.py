@@ -37,9 +37,9 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
     print(df.head().to_string())
     return df
 
-def upload_excel(df, total_ABC):
+def upload_excel(df, total_ABC, year):
     current_year = datetime.now().year
-    fiscal_year_str = f"{current_year}-{current_year + 1}"
+    fiscal_year_str = year
     fiscal_year = (
         private_supabase.table("FISCAL_YEAR")
         .select("*")
