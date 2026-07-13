@@ -36,12 +36,18 @@ def upload(request):
     total_ABC = float(total_abc)
     row_start = int(request.POST["startRow"])
     name_column = int(request.POST["itemName"])
+    year = (request.POST["year"])
     unit_column = int(request.POST["unit"])
     quantity_column = int(request.POST["quantity"])
     price_per_unit_column = int(request.POST["unitPrice"])
     df = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column)
-    e = upload_excel(df, total_ABC)
+    e = upload_excel(df, total_ABC, year)
     return Response({"status": True, 'err': e})
+
+@api_view(['GET'])
+def fiscal_years(request):
+    response = private_supabase.table("FISCAL_YEAR").select("Year").execute()
+    return Response(response.data)
 
 @api_view(['GET'])
 def masterlist(request):
