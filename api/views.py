@@ -1,6 +1,7 @@
+from django.http import HttpResponse
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
-
+import pandas as pd
 from api.services import private_supabase
 from excel import testingPPMP, upload_excel
 
@@ -63,6 +64,34 @@ def upload(request):
     df = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column)
     e = upload_excel(df, total_ABC, year)
     return Response({"status": True, 'err': e})
+
+@api_view(['GET'])
+def export(request):
+    year = request.GET["year"]
+    ppmp_items = get_ppmp_items(year)
+    df = pd.DataFrame(columns=[ #create columsn
+        "General Description",
+        "Unit of Measure",
+        "Quantity",
+        "Unit Price",
+        "Total Amount"
+    ])
+
+    for item in ppmp_items.data:
+        df.loc[len(df)] = [ #create next row
+            item["ItemName"],
+            item["UnitName"],
+            item["PlannedQuantity"],
+            item["PricePerUnit"],
+            item["PlannedQuantity"] * item["PricePerUnit"]
+        ]
+
+    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") #create response with file format
+    response["Content-Disposition"] = 'attachment; filename="ppmp.xlsx"' #make file downloadable
+    df.to_excel(response, index=False) #put file in the response
+
+    return response
+
 
 @api_view(['GET'])
 def fiscal_years(request):

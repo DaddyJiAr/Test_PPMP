@@ -6,6 +6,7 @@ urlpatterns = [
     path('user/', include('user.urls')),
     path('preview/', views.get_ppmp_preview),
     path('import/', views.upload),
+    path('export/', views.export),
     path('fiscal_years/', views.fiscal_years),
     path('dashboard_cards/', views.dashboard_cards),
     path('masterlist/', views.masterlist_data),
