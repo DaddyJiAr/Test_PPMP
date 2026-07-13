@@ -12,5 +12,6 @@ urlpatterns = [
     path('masterlist_cards/', views.masterlist_cards),
     path('purchase_request/', views.purchase_request),
     path('procurement_monitoring/', views.procurement_data),
+    path('procurement_status/', views.update_purchase_request_status),
 
 ]
