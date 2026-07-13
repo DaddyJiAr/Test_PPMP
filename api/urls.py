@@ -8,6 +8,7 @@ urlpatterns = [
     path('import/', views.upload),
     path('masterlist/', views.masterlist),
     path('fiscal_years/', views.fiscal_years),
+    path('dashboard_cards/', views.dashboard_cards),
     path('purchase_request/', views.purchase_request),
 
 ]
