@@ -101,7 +101,7 @@ def dashboard_cards(request):
                      })
 
 @api_view(['POST'])
-def masterlist(request):
+def masterlist_data(request):
     year = request.POST["year"]
     fiscal_year_id = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).single().execute()
     if fiscal_year_id is None:
@@ -187,5 +187,49 @@ def procurement_cards(request):
                      })
 
 
-# @api_view(['POST'])
-# def procurement_cards(request):
+@api_view(['POST'])
+def procurement_data(request):
+    year = request.POST["year"]
+    ppmp_items = get_ppmp_items(year)
+    total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count = get_headers(ppmp_items)
+    item_ids = list({
+        item["ItemID"]
+        for item in ppmp_items.data
+        if item["ItemID"] is not None
+    })
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("ItemID", item_ids).execute()
+    pr_map = {}
+    for pr in purchase_requests.data:
+        pr_map.setdefault(pr["ItemID"], []).append(pr) #creates a dict where the key is itemid
+
+    data = [
+        {
+            "itemId": item["ItemID"],
+            "itemName": item["ItemName"],
+            "unitMeasurement": item["UnitName"],
+            "plannedQuantity": item["PlannedQuantity"],
+            "availableQuantity": item["AvailableQuantity"],
+            "pendingQuantity": item["PendingQuantity"],
+            "fulfilledQuantity": item["ReceivedQuantity"],
+            "priceCatalog": item["PricePerUnit"],
+            "prHistory": [
+                {
+                    "prId": pr["PurchaseRequestID"],
+                    "quantity": pr["RequestQuantity"],
+                    "specifications": pr["Specifications"],
+                    "status": pr["Status"],
+                    "dateRequested": pr["created_at"],
+                    "dateFulfilled": pr.get("DateFulfilled"),
+                }
+                for pr in pr_map.get(item["ItemID"], []) #append pr if itemid matches
+            ],
+            "prHistoryCount": len(pr_map.get(item["ItemID"], [])),
+        }
+        for item in ppmp_items.data
+    ]
+    return Response({"totalPlannedItemCount": total_planned_item_count,
+                     "totalAvailableItemCount": total_available_item_count,
+                     "totalPendingItemCount": total_pending_item_count,
+                     "totalFulfilledItemCount": total_fulfilled_item_count,
+                     "ppmpMonitoringData": data
+                     })
