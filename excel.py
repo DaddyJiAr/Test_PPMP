@@ -8,7 +8,7 @@ from api.services import private_supabase
 def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column):
     df = pd.read_excel(excel_file, header=None, skiprows=row_start - 1)
 
-    df = df.dropna(
+    df = df.dropna( #filters out empty rows
         subset=[
             name_column,
             unit_column,
@@ -18,14 +18,14 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
     )
 
     # print(df.iloc[0])
-    df = df.iloc[:, [
+    df = df.iloc[:, [ #only includes necessary columns
         name_column,
         unit_column,
         quantity_column,
         price_per_unit_column
     ]]
 
-    df.columns = [
+    df.columns = [ #rename
         "Description",
         "Unit",
         "Quantity",
