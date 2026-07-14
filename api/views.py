@@ -37,9 +37,9 @@ def get_headers(ppmp_items):
     return total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count
 
 def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname, user_id,
+    item_name1,
     value=None,
     quantity1=None,
-    item_name1=None,
     quantity2=None,
     item_name2=None
 ):
@@ -72,7 +72,8 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
         "PerformedBy": user_fullname,
         "FiscalYear": fiscal_year,
         "Description": description,
-        "UserID": user_id
+        "UserID": user_id,
+        "ItemName": item_name1
     }).execute()
     return response is not None
 
@@ -145,7 +146,7 @@ def export(request):
     return response
 
 
-@api_view(['GET'])
+@api_view(['GET', 'POST'])
 def fiscal_years(request):
     response = private_supabase.table("FISCAL_YEAR").select("Year").execute()
     return Response(response.data)
@@ -295,7 +296,7 @@ def update_purchase_request_status(request):
 
     except Exception as e:
         return Response({"error": str(e)})
-    if response == True:
+    if response is not None:
         return Response({"status": "success"}, status=200)
     else:
         return Response({"status": "fail"}, status=400)
