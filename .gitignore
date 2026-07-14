@@ -1,18 +1,14 @@
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
 *.pyc
 
-
-# Python/Environment files
-.env
+# Virtual environment
 .venv/
-__pycache__/
-*.pyc
+.env
 
 # Database
 db.sqlite3
 
-# IDE settings
+# IDE
 .idea/
