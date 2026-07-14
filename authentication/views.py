@@ -53,6 +53,13 @@ def get_role_token(token):
     else:
         return user[0]["Role"]
 
+def check_user(request):
+    token = get_token(request)
+    user = get_user(token)
+    if user is None:
+        return False
+    else:
+        return True
 
 @api_view(['GET'])
 def get_user_test(request):
