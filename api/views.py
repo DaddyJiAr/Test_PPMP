@@ -76,6 +76,7 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
     }).execute()
     return response is not None
 
+
 @api_view(['POST'])
 def get_ppmp_preview(request):
     excel_file = request.FILES["file"]
@@ -84,9 +85,14 @@ def get_ppmp_preview(request):
     unit_column = int(request.POST["unit"])
     quantity_column = int(request.POST["quantity"])
     price_per_unit_column = int(request.POST["unitPrice"])
-    df = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column)
+    total_abc = request.POST.get("totalABC")
+    year = request.POST.get("year")
+    df, grand_total_amount, exists = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year)
+    print(grand_total_amount)
+    if float(total_abc) < grand_total_amount:
+        return Response({"error": "Total ABC is less than grand total"},)
     # e = upload_excel(df)
-    return Response({"data": df.head().to_dict(orient="records"), 'name': name_column, 'unit': unit_column, 'quantity': quantity_column, 'price': price_per_unit_column})
+    return Response({"data": df.head().to_dict(orient="records"), 'name': name_column, 'unit': unit_column, 'quantity': quantity_column, 'price': price_per_unit_column, 'exists': exists})
 
 
 @api_view(['POST'])
@@ -105,7 +111,9 @@ def upload(request):
     unit_column = int(request.POST["unit"])
     quantity_column = int(request.POST["quantity"])
     price_per_unit_column = int(request.POST["unitPrice"])
-    df = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column)
+    df, grand_total_amount, exists = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year)
+    if float(total_abc) < grand_total_amount:
+        return Response({"error": "Total ABC is less than grand total"},)
     e = upload_excel(df, total_ABC, year)
     return Response({"status": True, 'err': e})
 
