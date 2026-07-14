@@ -2,7 +2,8 @@ from django.http import HttpResponse
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 import pandas as pd
-from api.services import private_supabase
+from api.services import private_supabase, get_user
+from authentication.views import get_token, check_user
 from excel import testingPPMP, upload_excel
 
 def get_item(item_id):
@@ -16,6 +17,10 @@ def get_item_detail(item_id, column_name):
 def get_ppmp_items(year):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
     return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).execute()
+
+def get_year_str(fiscal_year_id):
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("Year").eq("FiscalYearID", fiscal_year_id).single().execute()
+    return fiscal_year.data["Year"]
 
 def get_headers(ppmp_items):
     total_planned_item_count = 0
@@ -31,6 +36,45 @@ def get_headers(ppmp_items):
 
     return total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count
 
+def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname, user_id,
+    value=None,
+    quantity1=None,
+    item_name1=None,
+    quantity2=None,
+    item_name2=None
+):
+    description = ""
+    if entity_type == "PPMP":
+        if action_type == "upload":
+            description = f"PPMP list for Fiscal Year {fiscal_year} uploaded"
+        elif action_type == "export":
+            description = f"PPMP list for Fiscal Year {fiscal_year} exported"
+    elif entity_type == "Purchase Request":
+        if action_type == "requested":
+            description = f"Purchase request of {quantity1} {item_name1} is requested"
+        if action_type == "rejected":
+            description = f"Purchase request of {quantity1} {item_name1} is rejected"
+        if action_type == "fulfilled":
+            description = f"Purchase request of {quantity1} {item_name1} has been fulfilled"
+        if action_type == "cancel":
+            description = f"Purchase request of {quantity1} {item_name1} is cancelled"
+    elif entity_type == "In Lieu":
+        if action_type == "reallocate":
+            description = f"{quantity1} {item_name1} In Lieu of {quantity2} {item_name2} requested"
+        if action_type == "approved":
+            description = f"{quantity1} {item_name1} In Lieu of {quantity2} {item_name2} approved"
+        if action_type == "rejected":
+            description = f"{quantity1} {item_name1} In Lieu of {quantity2} {item_name2} rejected"
+    response = private_supabase.table("PROCUREMENT_LOG").insert({
+        "EntityType": entity_type,
+        "ActionType": action_type,
+        "Price": value,
+        "PerformedBy": user_fullname,
+        "FiscalYear": fiscal_year,
+        "Description": description,
+        "UserID": user_id
+    }).execute()
+    return response is not None
 
 @api_view(['POST'])
 def get_ppmp_preview(request):
@@ -177,15 +221,22 @@ def masterlist_cards(request):
 
 @api_view(['POST'])
 def purchase_request(request):
+    token = get_token(request)
+    user = get_user(token)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
     item_id = int(request.POST["item_id"])
-    # return Response({"status": int(get_item_detail(item_id, "PendingQuantity"))})
     user_id = request.POST["user_id"]
     specifications = request.POST["specifications"]
     request_quantity = int(request.POST["request_quantity"])
     status = "Pending"
     available_quantity = int(get_item_detail(item_id, "AvailableQuantity"))
     pending_quantity = int(get_item_detail(item_id, "PendingQuantity"))
-
+    price_per_unit = int(get_item_detail(item_id, "PricePerUnit"))
+    item_name = get_item_detail(item_id, "ItemName")
+    fiscal_year_id = int(get_item_detail(item_id, "FiscalYearID"))
+    value = price_per_unit * request_quantity
+    year = get_year_str(fiscal_year_id)
     if request_quantity > available_quantity:
         return Response(
             {"error": "Not enough available quantity"},
@@ -203,8 +254,43 @@ def purchase_request(request):
         "AvailableQuantity": (available_quantity - request_quantity),
         "PendingQuantity": pending_quantity + request_quantity,
     }).eq("ItemID", item_id).execute()
-    return Response({"status": "success"})
+    response = create_procurement_log("Purchase Request", "requested", year, user[0]["FullName"], user_id, value=value, quantity1=request_quantity, item_name1=item_name)
+    if response == True:
+        return Response({"status": "success"})
+    else:
+        return Response({"status": "fail"})
 
+
+@api_view(["PUT"])
+def update_purchase_request_status(request):
+    token = get_token(request)
+    user = get_user(token)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+    pr_id = request.data["prId"]
+    status = request.data["status"]
+    try:
+        purchase_request = private_supabase.table("PURCHASE_REQUEST").select("*").eq("PurchaseRequestID", pr_id).single().execute()
+        purchase_request = purchase_request.data
+        ppmp_item = get_item(purchase_request["ItemID"])
+        fiscal_year_id = int(get_item_detail(ppmp_item["ItemID"], "FiscalYearID"))
+        year = get_year_str(fiscal_year_id)
+        item_name = get_item_detail(ppmp_item["ItemID"], "ItemName")
+        price_per_unit = int(get_item_detail(ppmp_item["ItemID"], "PricePerUnit"))
+        request_quantity = purchase_request["RequestQuantity"]
+        value = purchase_request["RequestQuantity"] * price_per_unit
+        if not purchase_request:
+            return Response({"status": "PurchaseRequest does not exist"}, status=404)
+        private_supabase.table("PURCHASE_REQUEST").update({"Status": status.capitalize()}).eq("PurchaseRequestID", pr_id).execute()
+        response = create_procurement_log("Purchase Request", status, year, user[0]["FullName"], user[0]["UserID"],
+                                          value=value, quantity1=request_quantity, item_name1=item_name)
+
+    except Exception as e:
+        return Response({"error": str(e)})
+    if response == True:
+        return Response({"status": "success"}, status=200)
+    else:
+        return Response({"status": "fail"}, status=400)
 
 @api_view(['POST'])
 def procurement_cards(request):
@@ -267,15 +353,4 @@ def procurement_data(request):
                      "ppmpMonitoringData": data
                      })
 
-@api_view(["PUT"])
-def update_purchase_request_status(request):
-    pr_id = request.data["prId"]
-    status = request.data["status"]
-    try:
-        response = private_supabase.table("PURCHASE_REQUEST").select("*").eq("PurchaseRequestID", pr_id).execute()
-        if not response.data:
-            return Response({"status": "PurchaseRequest does not exist"}, status=404)
-        private_supabase.table("PURCHASE_REQUEST").update({"Status": status}).eq("PurchaseRequestID", pr_id).execute()
-    except Exception as e:
-        return Response({"error": str(e)})
-    return Response({"status": "success"}, status=200)
+

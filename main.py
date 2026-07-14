@@ -38,9 +38,3 @@
 # # from excel import testingPPMP
 # #
 # # testingPPMP("PPMP.xlsx", 11, 1, 2, 15, 16)
-
-def test():
-    return 1, 2, 3
-
-a, b, c= test()
-print(a, b, c)
