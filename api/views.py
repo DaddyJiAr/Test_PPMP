@@ -72,7 +72,8 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
         "PerformedBy": user_fullname,
         "FiscalYear": fiscal_year,
         "Description": description,
-        "UserID": user_id
+        "UserID": user_id,
+        "ItemName": item_name1
     }).execute()
     return response is not None
 
