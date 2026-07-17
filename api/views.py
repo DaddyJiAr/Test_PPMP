@@ -88,10 +88,31 @@ def get_ppmp_preview(request):
     price_per_unit_column = int(request.POST["unitPrice"])
     total_abc = request.POST.get("totalABC")
     year = request.POST.get("year")
-    df, grand_total_amount, exists = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year)
+    try:
+        df, grand_total_amount, exists = testingPPMP(
+            excel_file,
+            row_start,
+            name_column,
+            unit_column,
+            quantity_column,
+            price_per_unit_column,
+            year,
+        )
+    except ValueError as e:
+        return Response(
+            {"errors": e.args[0]},
+            status=400,
+        )
     print(grand_total_amount)
     if float(total_abc) < grand_total_amount:
-        return Response({"error": "Total ABC is less than grand total"},)
+        return Response(
+            {
+                "error": {
+                    "message": "Total ABC is less than grand total"
+                }
+            },
+            status=400,
+        )
     # e = upload_excel(df)
     return Response({"data": df.head().to_dict(orient="records"), 'name': name_column, 'unit': unit_column, 'quantity': quantity_column, 'price': price_per_unit_column, 'exists': exists})
 

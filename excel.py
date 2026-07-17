@@ -39,6 +39,29 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
         "CatalogPrice"
     ]
 
+    # check for incorrect data types (mga NaN)
+    quantity = pd.to_numeric(df["Quantity"], errors="coerce")
+    price = pd.to_numeric(df["CatalogPrice"], errors="coerce")
+
+    bad = df[quantity.isna() | price.isna()]
+
+    if not bad.empty:
+        errors = []
+
+        for index, row in bad.iterrows():
+            errors.append({
+                "row": index,
+                "quantity": row["Quantity"],
+                "price": row["CatalogPrice"],
+            })
+        raise ValueError({
+            "message": "Invalid numeric values found in the Excel file.",
+            "rows": errors,
+        })
+
+    df["Quantity"] = quantity
+    df["CatalogPrice"] = price
+
     df["TotalAmount"] = df["Quantity"] * df["CatalogPrice"]
     total_amount =  df["TotalAmount"].sum()
     if fiscal_year.data:
