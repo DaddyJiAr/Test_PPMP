@@ -70,19 +70,20 @@ def upload_excel(df, total_ABC, year):
     )
     fiscal_year_id = response.data[0]["FiscalYearID"]
 
+    records = []
+
+    for _, row in df.iterrows():
+        records.append({
+            "ItemName": row["Description"],
+            "UnitName": row["Unit"],
+            "PlannedQuantity": int(row["Quantity"]),
+            "AvailableQuantity": int(row["Quantity"]),
+            "PricePerUnit": float(row["CatalogPrice"]),
+            "PendingQuantity": 0,
+            "ReceivedQuantity": 0,
+            "FiscalYearID": fiscal_year_id,
+        })
     try:
-        imported_ppmp_grand_total = 0
-        for _, row in df.iterrows():
-            imported_ppmp_grand_total += int(row["Quantity"]) * float(row["CatalogPrice"])
-            private_supabase.table("PPMP_ITEM").insert({
-                "ItemName": row["Description"],
-                "UnitName": row["Unit"],
-                "PlannedQuantity": int(row["Quantity"]),
-                "AvailableQuantity": int(row["Quantity"]),
-                "PricePerUnit": float(row["CatalogPrice"]),
-                "PendingQuantity": 0,
-                "ReceivedQuantity": 0,
-                "FiscalYearID": fiscal_year_id,
-            }).execute()
+        private_supabase.table("PPMP_ITEM").insert(records).execute()
     except TypeError as e:
         return e
