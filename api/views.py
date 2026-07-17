@@ -1,4 +1,5 @@
 from django.http import HttpResponse
+from rest_framework import response
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 import pandas as pd
@@ -32,7 +33,7 @@ def get_headers(ppmp_items):
         total_planned_item_count += ppmp_item["PlannedQuantity"]
         total_available_item_count += ppmp_item["AvailableQuantity"]
         total_pending_item_count += ppmp_item["PendingQuantity"]
-        total_fulfilled_item_count += ppmp_item["ReceivedQuantity"]
+        total_fulfilled_item_count += ppmp_item["FulfilledQuantity"]
 
     return total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count
 
@@ -75,6 +76,24 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
         "UserID": user_id,
         "ItemName": item_name1
     }).execute()
+    return response is not None
+
+def update_pr_status(status, item_id, quantity):
+    response = ''
+    if status == "fulfilled":
+        pending_quantity = int(get_item_detail(item_id, "PendingQuantity"))
+        fulfilled_quantity = int(get_item_detail(item_id, "FulfilledQuantity"))
+        response = private_supabase.table("PPMP_ITEM").update({
+            "PendingQuantity": pending_quantity - quantity,
+            "FulfilledQuantity": fulfilled_quantity + quantity
+        }).execute()
+    elif status == "cancelled":
+        pending_quantity = int(get_item_detail(item_id, "PendingQuantity"))
+        available_quantity = int(get_item_detail(item_id, "AvailableQuantity"))
+        response = private_supabase.table("PPMP_ITEM").update({
+            "PendingQuantity": pending_quantity - quantity,
+            "AvailableQuantity": available_quantity + quantity
+        }).execute()
     return response is not None
 
 
@@ -139,7 +158,7 @@ def upload(request):
     e = upload_excel(df, total_ABC, year)
     return Response({"status": True, 'err': e})
 
-@api_view(['GET'])
+@api_view(['POST'])
 def export(request):
     year = request.GET["year"]
     ppmp_items = get_ppmp_items(year)
@@ -167,13 +186,17 @@ def export(request):
     return response
 
 
-@api_view(['GET', 'POST'])
+@api_view(['POST'])
 def fiscal_years(request):
     response = private_supabase.table("FISCAL_YEAR").select("Year").execute()
     return Response(response.data)
 
 @api_view(['POST'])
 def dashboard_cards(request):
+    token = get_token(request)
+    user = get_user(token)
+    if token is None or user is None:
+        return Response({"error": "Invalid token"}, status=401)
     year = request.POST["year"]
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
     total_annual_budget = fiscal_year.data["TotalABC"]
@@ -234,7 +257,7 @@ def masterlist_data(request):
             "plannedQuantity": item["PlannedQuantity"],
             "availableQuantity": item["AvailableQuantity"],
             "pendingQuantity": item["PendingQuantity"],
-            "fulfilledQuantity": item["ReceivedQuantity"],
+            "fulfilledQuantity": item["FulfilledQuantity"],
             "priceCatalog": item["PricePerUnit"],
         }
         for item in response.data
@@ -302,7 +325,7 @@ def purchase_request(request):
         return Response({"status": "fail"})
 
 
-@api_view(["PUT"])
+@api_view(['POST'])
 def update_purchase_request_status(request):
     token = get_token(request)
     user = get_user(token)
@@ -310,9 +333,11 @@ def update_purchase_request_status(request):
         return Response({"error": "User not found"}, status=401)
     pr_id = request.data["prId"]
     status = request.data["status"]
+    status = status.lower()
     try:
         purchase_request = private_supabase.table("PURCHASE_REQUEST").select("*").eq("PurchaseRequestID", pr_id).single().execute()
         purchase_request = purchase_request.data
+        item_id = int(purchase_request["ItemID"])
         ppmp_item = get_item(purchase_request["ItemID"])
         fiscal_year_id = int(get_item_detail(ppmp_item["ItemID"], "FiscalYearID"))
         year = get_year_str(fiscal_year_id)
@@ -323,6 +348,7 @@ def update_purchase_request_status(request):
         if not purchase_request:
             return Response({"status": "PurchaseRequest does not exist"}, status=404)
         private_supabase.table("PURCHASE_REQUEST").update({"Status": status.capitalize()}).eq("PurchaseRequestID", pr_id).execute()
+        update_pr_status(status, item_id, request_quantity)
         response = create_procurement_log("Purchase Request", status, year, user[0]["FullName"], user[0]["UserID"],
                                           value=value, quantity1=request_quantity, item_name1=item_name)
 
@@ -380,7 +406,7 @@ def procurement_data(request):
             "plannedQuantity": item["PlannedQuantity"],
             "availableQuantity": item["AvailableQuantity"],
             "pendingQuantity": item["PendingQuantity"],
-            "fulfilledQuantity": item["ReceivedQuantity"],
+            "fulfilledQuantity": item["FulfilledQuantity"],
             "priceCatalog": item["PricePerUnit"],
             "prHistory": [
                 {
