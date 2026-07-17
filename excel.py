@@ -117,7 +117,7 @@ def upload_excel(df, total_ABC, year):
             "AvailableQuantity": int(row["Quantity"]),
             "PricePerUnit": float(row["CatalogPrice"]),
             "PendingQuantity": 0,
-            "ReceivedQuantity": 0,
+            "FulfilledQuantity": 0,
             "FiscalYearID": fiscal_year_id,
         })
     try:
