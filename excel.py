@@ -16,6 +16,20 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
 
     df = pd.read_excel(excel_file, header=None, skiprows=row_start - 1)
 
+    required_columns = [
+        name_column,
+        unit_column,
+        quantity_column,
+        price_per_unit_column,
+    ]
+
+    missing = [c for c in required_columns if c not in df.columns]
+
+    if missing:
+        raise ValueError({
+            "message": f"Column(s) {missing} do not exist or are completely empty.",
+        })
+
     df = df.dropna( #filters out empty rows
         subset=[
             name_column,
