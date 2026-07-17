@@ -350,6 +350,16 @@ def procurement_data(request):
     pr_map = {}
     for pr in purchase_requests.data:
         pr_map.setdefault(pr["ItemID"], []).append(pr) #creates a dict where the key is itemid
+    user_ids = list({
+        pr["UserID"]
+        for pr in purchase_requests.data
+        if pr["UserID"] is not None
+    })
+    users = private_supabase.table("USER").select("UserID, FullName").in_("UserID", user_ids).execute()
+    user_lookup = {
+        user["UserID"]: user["FullName"]
+        for user in users.data
+    }
 
     data = [
         {
@@ -367,6 +377,7 @@ def procurement_data(request):
                     "quantity": pr["RequestQuantity"],
                     "specifications": pr["Specifications"],
                     "status": pr["Status"],
+                    "requestedBy": user_lookup.get(pr["UserID"]),
                     "dateRequested": pr["created_at"],
                     "dateFulfilled": pr.get("DateFulfilled"),
                 }
