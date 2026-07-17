@@ -196,7 +196,18 @@ def dashboard_cards(request):
     for ppmp_item in ppmp_items.data:
         available_lieu_pool_funds += ppmp_item["AvailableQuantity"] * ppmp_item["PricePerUnit"]
     open_funds = total_annual_budget - available_lieu_pool_funds
-    logs = "" #lapa
+    logs = private_supabase.table("PROCUREMENT_LOG").select("*").execute()
+    logs = [
+        {
+            "actionType": log["ActionType"].capitalize(),
+            "description": log["Description"],
+            "date": log["created_at"],
+            "value": log["Price"],
+            "userFullName": log["PerformedBy"],
+            "fiscalYear": log["FiscalYear"],
+        }
+        for log in logs.data
+    ]
     return Response({"totalAnnualBudget": total_annual_budget,
                      "committedFunds": committed_funds,
                      "availableLieuPoolFunds": available_lieu_pool_funds,
