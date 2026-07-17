@@ -107,7 +107,7 @@ def get_ppmp_preview(request):
     if float(total_abc) < grand_total_amount:
         return Response(
             {
-                "error": {
+                "errors": {
                     "message": "Total ABC is less than grand total"
                 }
             },
