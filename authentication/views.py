@@ -11,7 +11,7 @@ def get_current_user(id):
 @api_view(['GET'])
 def get_users(request):
     token = get_token(request)
-    user = get_user(token)
+    user = get_user(request)
     if user is None:
         return Response({"error": "Unauthorized", "user": user, "token": token}, status=401)
     response = private_supabase.table("USER").select("*").execute()
@@ -35,7 +35,7 @@ def login(request):
 @api_view(['GET'])
 def get_role(request):
     token = get_token(request)
-    user = get_user(token)
+    user = get_user(request)
     if user is None:
         return Response({"error": "Unauthorized", "user": user, "token": token}, status=401)
     return Response(user[0]["Role"])

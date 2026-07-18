@@ -6,10 +6,9 @@ from api.utils import private_supabase, get_user, get_token
 
 @api_view(['GET'])
 def get_header_info(request):
-    token = get_token(request)
-    user = get_user(token)
+    user = get_user(request)
     if user is None:
-        return Response({"error": "User not found"}, status=401)
+        return Response({"error": "User not found", "token": token, "user": user,}, status=401)
     else:
         return Response({"UserFullName": user[0]["FullName"], "UserEmailAddress": user[0]["EmailAddress"], "UserRole": user[0]["Role"]}, status=200)
 
