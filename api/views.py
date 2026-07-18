@@ -20,7 +20,7 @@ def get_ppmp_items(year):
 
 def get_available_lieu_pool_funds(ppmp_items):
     available_lieu_pool_funds = 0
-    for ppmp_item in ppmp_items:
+    for ppmp_item in ppmp_items.data:
         available_lieu_pool_funds += ppmp_item["PlannedQuantity"] * ppmp_item["PricePerUnit"]
     return available_lieu_pool_funds
 
@@ -458,12 +458,24 @@ def get_in_lieu_data(request):
     user_fullname = user["FullName"]
     year = request.POST["year"]
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
-    total_abc = fiscal_year["TotalABC"]
+    total_abc = fiscal_year.data["TotalABC"]
     ppmp_items = get_ppmp_items(year)
     open_funds = total_abc - get_available_lieu_pool_funds(ppmp_items)
     ppmp_reallocation_data = [{
-
+        "itemId": ppmp_item["ItemID"],
+        "itemName": ppmp_item["ItemName"],
+        "unitMeasurement": ppmp_item["UnitName"],
+        "plannedQuantity": ppmp_item["PlannedQuantity"],
+        "availableQuantity": ppmp_item["AvailableQuantity"],
+        "pendingQuantity": ppmp_item["PendingQuantity"],
+        "fulfilledQuantity": ppmp_item["FulfilledQuantity"],
+        "priceCatalog": ppmp_item["PricePerUnit"],
     }for ppmp_item in ppmp_items.data]
+    return Response({
+        "userFullName": user_fullname,
+        "openFunds": open_funds,
+        "ppmpReallocationData": ppmp_reallocation_data
+    }, status=200)
 
 @api_view(['POST'])
 def get_signatories(request):

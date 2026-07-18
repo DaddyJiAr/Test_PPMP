@@ -43,7 +43,7 @@ def get_role(request):
 @api_view(['GET'])
 def get_user_test(request):
     token = get_token(request)
-    role = get_role_token(token)
+    role = get_role_token(request)
     if role is None:
         return Response({"error": "Unauthorized", "token": token}, status=401)
     if role != "Dean":
