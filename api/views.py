@@ -186,7 +186,7 @@ def export(request):
     return response
 
 
-@api_view(['POST'])
+@api_view(['GET'])
 def fiscal_years(request):
     response = private_supabase.table("FISCAL_YEAR").select("Year").execute()
     return Response(response.data)
