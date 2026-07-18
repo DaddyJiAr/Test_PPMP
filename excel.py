@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from api.services import private_supabase
+from api.utils import private_supabase
 
 
 def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year):

@@ -1,7 +1,8 @@
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 
-from api.services import public_supabase, private_supabase, get_user
+from api.utils import private_supabase, get_user, get_token, get_role_token, public_supabase
+
 
 def get_current_user(id):
     response = private_supabase.table("USER").select("*").eq("UserID", id).execute()
@@ -39,28 +40,6 @@ def get_role(request):
         return Response({"error": "Unauthorized", "user": user, "token": token}, status=401)
     return Response(user[0]["Role"])
 
-def get_token(request):
-    auth = request.headers.get("Authorization")
-    if not auth or not auth.startswith("Bearer "):
-        return Response({"error": "Unauthorized"}, status=401)
-    token = auth.replace("Bearer ", "")
-    return token
-
-def get_role_token(token):
-    user = get_user(token)
-    if user is None:
-        return
-    else:
-        return user[0]["Role"]
-
-def check_user(request):
-    token = get_token(request)
-    user = get_user(token)
-    if user is None:
-        return False
-    else:
-        return True
-
 @api_view(['GET'])
 def get_user_test(request):
     token = get_token(request)
@@ -71,7 +50,6 @@ def get_user_test(request):
         return Response({"error": "Unauthorized", "role": role, "pakyu": "Jerson"}, status=403)
     else:
         return Response({"role": role, "token": token})
-
 
 @api_view(["GET"])
 def sign_up(request):

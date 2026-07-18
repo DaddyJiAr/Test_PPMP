@@ -14,5 +14,6 @@ urlpatterns = [
     path('purchase_request/', views.purchase_request),
     path('procurement_monitoring/', views.procurement_data),
     path('procurement_status/', views.update_purchase_request_status),
+    path('signatories/', views.get_signatories),
 
 ]

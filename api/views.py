@@ -1,10 +1,8 @@
 from django.http import HttpResponse
-from rest_framework import response
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 import pandas as pd
-from api.services import private_supabase, get_user
-from authentication.views import get_token, check_user
+from .utils import private_supabase, get_user
 from excel import testingPPMP, upload_excel
 
 def get_item(item_id):
@@ -37,7 +35,7 @@ def get_headers(ppmp_items):
 
     return total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count
 
-def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname, user_id,
+def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
     item_name1,
     value=None,
     quantity1=None,
@@ -73,7 +71,6 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
         "PerformedBy": user_fullname,
         "FiscalYear": fiscal_year,
         "Description": description,
-        "UserID": user_id,
         "ItemName": item_name1
     }).execute()
     return response is not None
@@ -138,6 +135,9 @@ def get_ppmp_preview(request):
 
 @api_view(['POST'])
 def upload(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
     excel_file = request.FILES["file"]
     total_abc = request.POST.get("totalABC")
     if total_abc is None:
@@ -156,10 +156,14 @@ def upload(request):
     if float(total_abc) < grand_total_amount:
         return Response({"error": "Total ABC is less than grand total"},)
     e = upload_excel(df, total_ABC, year)
+    create_procurement_log("PPMP", "upload", year, user["FullName"])
     return Response({"status": True, 'err': e})
 
 @api_view(['POST'])
 def export(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
     year = request.GET["year"]
     ppmp_items = get_ppmp_items(year)
     df = pd.DataFrame(columns=[ #create columsn
@@ -182,7 +186,7 @@ def export(request):
     response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") #create response with file format
     response["Content-Disposition"] = 'attachment; filename="ppmp.xlsx"' #make file downloadable
     df.to_excel(response, index=False) #put file in the response
-
+    create_procurement_log("PPMP", "upload", year, user["FullName"])
     return response
 
 
@@ -193,9 +197,8 @@ def fiscal_years(request):
 
 @api_view(['POST'])
 def dashboard_cards(request):
-    token = get_token(request)
-    user = get_user(token)
-    if token is None or user is None:
+    user = get_user(request)
+    if user is None:
         return Response({"error": "Invalid token"}, status=401)
     year = request.POST["year"]
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
@@ -243,6 +246,9 @@ def dashboard_cards(request):
 
 @api_view(['POST'])
 def masterlist_data(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "Invalid token"}, status=401)
     year = request.POST["year"]
     fiscal_year_id = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).single().execute()
     if fiscal_year_id is None:
@@ -267,6 +273,9 @@ def masterlist_data(request):
 
 @api_view(['POST'])
 def masterlist_cards(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "Invalid token"}, status=401)
     year = request.POST["year"]
     ppmp_items = get_ppmp_items(year)
 
@@ -285,8 +294,7 @@ def masterlist_cards(request):
 
 @api_view(['POST'])
 def purchase_request(request):
-    token = get_token(request)
-    user = get_user(token)
+    user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
     item_id = int(request.POST["item_id"])
@@ -318,7 +326,7 @@ def purchase_request(request):
         "AvailableQuantity": (available_quantity - request_quantity),
         "PendingQuantity": pending_quantity + request_quantity,
     }).eq("ItemID", item_id).execute()
-    response = create_procurement_log("Purchase Request", "requested", year, user[0]["FullName"], user_id, value=value, quantity1=request_quantity, item_name1=item_name)
+    response = create_procurement_log("Purchase Request", "requested", year, user["FullName"], value=value, quantity1=request_quantity, item_name1=item_name)
     if response == True:
         return Response({"status": "success"})
     else:
@@ -327,8 +335,7 @@ def purchase_request(request):
 
 @api_view(['POST'])
 def update_purchase_request_status(request):
-    token = get_token(request)
-    user = get_user(token)
+    user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
     pr_id = request.data["prId"]
@@ -349,7 +356,7 @@ def update_purchase_request_status(request):
             return Response({"status": "PurchaseRequest does not exist"}, status=404)
         private_supabase.table("PURCHASE_REQUEST").update({"Status": status.capitalize()}).eq("PurchaseRequestID", pr_id).execute()
         update_pr_status(status, item_id, request_quantity)
-        response = create_procurement_log("Purchase Request", status, year, user[0]["FullName"], user[0]["UserID"],
+        response = create_procurement_log("Purchase Request", status, year, user["FullName"],
                                           value=value, quantity1=request_quantity, item_name1=item_name)
 
     except Exception as e:
@@ -361,6 +368,9 @@ def update_purchase_request_status(request):
 
 @api_view(['POST'])
 def procurement_cards(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "Invalid token"}, status=401)
     year = request.POST["year"]
     ppmp_items = get_ppmp_items(year)
 
@@ -375,6 +385,9 @@ def procurement_cards(request):
 
 @api_view(['POST'])
 def procurement_data(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "Invalid token"}, status=401)
     year = request.POST["year"]
     ppmp_items = get_ppmp_items(year)
     total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count = get_headers(ppmp_items)
@@ -431,4 +444,26 @@ def procurement_data(request):
                      "ppmpMonitoringData": data
                      })
 
+@api_view(['POST'])
+def get_in_lieu_data(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+    user_fullname = user["FullName"]
 
+@api_view(['POST'])
+def get_signatories(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+    document_type = request.POST["documentType"]
+    if document_type is None:
+        return Response({"error": "Document type not found"}, status=401)
+    response = private_supabase.table("DOCUMENT_SIGNATORY").select("*").eq("DocumentType", document_type.upper()).execute()
+    if response is None:
+        return Response({"error": "Document type not found"}, status=401)
+    signatories = [{
+        "fullName": signatory["FullName"],
+        "position": signatory["PositionTitle"],
+    }for signatory in response.data]
+    return Response({"signatories": signatories}, status=200)
