@@ -1,5 +1,7 @@
+from datetime import datetime
+import json
+
 from django.http import HttpResponse
-from openpyxl.styles.builtins import total
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 import pandas as pd
@@ -49,6 +51,7 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
     quantity2=None,
     item_name2=None
 ):
+    action_type = action_type.lower()
     description = ""
     if entity_type == "PPMP":
         if action_type == "upload":
@@ -71,6 +74,7 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
             description = f"{quantity1} {item_name1} In Lieu of {quantity2} {item_name2} approved"
         if action_type == "rejected":
             description = f"{quantity1} {item_name1} In Lieu of {quantity2} {item_name2} rejected"
+    print("Description "+ description)
     response = private_supabase.table("PROCUREMENT_LOG").insert({
         "EntityType": entity_type,
         "ActionType": action_type,
@@ -90,19 +94,22 @@ def update_pr_status(status, item_id, quantity):
         response = private_supabase.table("PPMP_ITEM").update({
             "PendingQuantity": pending_quantity - quantity,
             "FulfilledQuantity": fulfilled_quantity + quantity
-        }).execute()
+        }).eq("ItemID", item_id).execute()
     elif status == "cancelled":
         pending_quantity = int(get_item_detail(item_id, "PendingQuantity"))
         available_quantity = int(get_item_detail(item_id, "AvailableQuantity"))
         response = private_supabase.table("PPMP_ITEM").update({
             "PendingQuantity": pending_quantity - quantity,
             "AvailableQuantity": available_quantity + quantity
-        }).execute()
+        }).eq("ItemID", item_id).execute()
     return response is not None
 
 
 @api_view(['POST'])
 def get_ppmp_preview(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
     excel_file = request.FILES["file"]
     row_start = int(request.POST["startRow"])
     name_column = int(request.POST["itemName"])
@@ -171,7 +178,7 @@ def export(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    year = request.GET["year"]
+    year = request.POST["year"]
     ppmp_items = get_ppmp_items(year)
     df = pd.DataFrame(columns=[ #create columsn
         "General Description",
@@ -199,6 +206,9 @@ def export(request):
 
 @api_view(['GET'])
 def fiscal_years(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "Invalid token"}, status=401)
     response = private_supabase.table("FISCAL_YEAR").select("Year").execute()
     return Response(response.data)
 
@@ -339,7 +349,7 @@ def purchase_request(request):
         return Response({"status": "fail"})
 
 
-@api_view(['POST'])
+@api_view(['PUT'])
 def update_purchase_request_status(request):
     user = get_user(request)
     if user is None:
@@ -362,7 +372,7 @@ def update_purchase_request_status(request):
             return Response({"status": "PurchaseRequest does not exist"}, status=404)
         private_supabase.table("PURCHASE_REQUEST").update({"Status": status.capitalize()}).eq("PurchaseRequestID", pr_id).execute()
         update_pr_status(status, item_id, request_quantity)
-        response = create_procurement_log("Purchase Request", status, year, user["FullName"],
+        response = create_procurement_log("Purchase Request", status.lower(), year, user["FullName"],
                                           value=value, quantity1=request_quantity, item_name1=item_name)
 
     except Exception as e:
@@ -476,6 +486,94 @@ def get_in_lieu_data(request):
         "openFunds": open_funds,
         "ppmpReallocationData": ppmp_reallocation_data
     }, status=200)
+
+
+@api_view(["PUT"])
+def create_in_lieu_request(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+
+    payload = json.loads(request.POST.get("payload"))
+    in_lieu_items = payload["itemsToReduce"]
+    in_lieu_addition = payload["itemsToProcure"]
+    open_funds_utilized = payload["lieuFundedValue"]
+    budget_impact = payload["requiredBudget"]
+    status = "Pending"
+    user_id = user["UserID"]
+
+    response = private_supabase.table("IN_LIEU").insert({
+        "BudgetImpact": budget_impact,
+        "Status": status,
+        "UserID": user_id,
+        "OpenFundsUtilized": open_funds_utilized,
+    }).execute()
+    if not response.data:
+        return Response({"error": "Error inserting In Lieu"}, status=401)
+    in_lieu_id = response.data[0]["InLieuID"]
+    fiscal_year_id = 0
+    if len(in_lieu_items) > 0:
+        insert_in_lieu_items = [{
+            "QuantityReduced": in_lieu_item["reduceQuantity"],
+            "ItemID": in_lieu_item["itemId"],
+            "InLieuID": in_lieu_id,
+        }for in_lieu_item in in_lieu_items]
+        ppmp_item_id = insert_in_lieu_items[0]["ItemID"]
+        ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
+        fiscal_year_id = ppmp_item.data["FiscalYearID"]
+    else:
+        current_year = datetime.now().year
+        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", current_year).single().execute()
+        if not response.data:
+            return Response({"error": "Fiscal year missing"}, status=401)
+        fiscal_year_id = fiscal_year.data["FiscalYearID"]
+
+    new_items_list = [item for item in in_lieu_addition if item["added"]]
+    new_items = []
+    if len(new_items_list) > 0:
+        new_items = [{
+            "ItemName": item["name"],
+            "UnitName": item["measurementUnit"],
+            "PricePerUnit": item["unitPrice"],
+            "PlannedQuantity": item["quantity"],
+            "AvailableQuantity": 0,
+            "PendingQuantity": 0,
+            "FulfilledQuantity": 0,
+            "FiscalYearID": fiscal_year_id,
+        }for item in new_items_list]
+        response = private_supabase.table("PPMP_ITEM").insert(new_items).execute()
+        if not response.data:
+            return Response({"error": "Error inserting PPMP item "}, status=401)
+        inserted_items = response.data
+        print(inserted_items)
+        # pairs the original_item to new_items_list and inserted_item to inserted_items
+        # parang for each pero dalawa
+        #gagana lang daw pag same dictionary
+        for original_item, inserted_item in zip(new_items_list, inserted_items):
+            original_item["itemId"] = inserted_item["ItemID"]
+        print("new_items_list:", new_items_list)
+        print("in_lieu_addition:", in_lieu_addition)
+        insert_in_lieu_addition = [{
+            "ItemName": item["name"],
+            "UnitName": item["measurementUnit"],
+            "UnitPrice": item["unitPrice"],
+            "Quantity": item["quantity"],
+            "InLieuID": in_lieu_id,
+            "ItemID": item["itemId"],
+        }for item in in_lieu_addition]
+    response = private_supabase.table("IN_LIEU_ADDITION").insert(insert_in_lieu_addition).execute()
+    print(insert_in_lieu_addition)
+    if not response.data:
+        return Response({"error": "Error inserting In Lieu Items"}, status=401)
+    if len(in_lieu_items) > 0:
+        response = private_supabase.table("IN_LIEU_ITEM").insert(insert_in_lieu_items).execute()
+        if not response.data:
+            return Response({"error": "Error inserting In Lieu Items"}, status=401)
+    year = get_year_str(fiscal_year_id)
+    # response = create_procurement_log("In Lieu", "reallocate", year, user["FullName"],
+    #                                   value=budget_impact, quantity1=request_quantity, item_name1=item_name)
+    return Response({"stats": "success", "item_id": in_lieu_id, "new": new_items,
+                     "ppmp in lieu items": insert_in_lieu_items if len(in_lieu_items) > 0 else []})
 
 @api_view(['POST'])
 def get_signatories(request):
