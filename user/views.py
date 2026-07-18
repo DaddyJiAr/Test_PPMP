@@ -16,7 +16,7 @@ def get_header_info(request):
 @api_view(['GET'])
 def get_admin_name(request):
     token = get_token(request)
-    user = get_user(token)
+    user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
     else:
