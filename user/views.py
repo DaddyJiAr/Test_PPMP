@@ -1,3 +1,4 @@
+from rest_framework import response
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 
@@ -12,3 +13,13 @@ def get_header_info(request):
         return Response({"error": "User not found"}, status=401)
     else:
         return Response({"UserFullName": user[0]["FullName"], "UserEmailAddress": user[0]["EmailAddress"], "UserRole": user[0]["Role"]}, status=200)
+
+@api_view(['GET'])
+def get_admin_name(request):
+    token = get_token(request)
+    user = get_user(token)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+    else:
+        admin_name = private_supabase.table("USER").select("FullName").eq("Role", "Admin").single().execute()
+        return Response(admin_name.data, status=200)
