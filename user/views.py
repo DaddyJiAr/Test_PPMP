@@ -2,7 +2,7 @@ from rest_framework import response
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 
-from api.utils import public_supabase, private_supabase, get_user, get_token
+from api.utils import private_supabase, get_user, get_token
 
 @api_view(['GET'])
 def get_header_info(request):

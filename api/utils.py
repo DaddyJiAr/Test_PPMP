@@ -1,5 +1,4 @@
 from rest_framework.response import Response
-from websockets import Response
 from dotenv import load_dotenv
 import os
 from supabase import create_client

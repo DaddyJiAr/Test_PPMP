@@ -1,4 +1,5 @@
 from django.http import HttpResponse
+from openpyxl.styles.builtins import total
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 import pandas as pd
@@ -16,6 +17,12 @@ def get_item_detail(item_id, column_name):
 def get_ppmp_items(year):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
     return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).execute()
+
+def get_available_lieu_pool_funds(ppmp_items):
+    available_lieu_pool_funds = 0
+    for ppmp_item in ppmp_items:
+        available_lieu_pool_funds += ppmp_item["PlannedQuantity"] * ppmp_item["PricePerUnit"]
+    return available_lieu_pool_funds
 
 def get_year_str(fiscal_year_id):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("Year").eq("FiscalYearID", fiscal_year_id).single().execute()
@@ -219,8 +226,7 @@ def dashboard_cards(request):
         purchase_request_item = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", purchase_request["ItemID"]).eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).single().execute()
         committed_funds += purchase_request_item.data["PricePerUnit"] * purchase_request["RequestQuantity"] #include arrived items (kulang pa)
         requested_funds += purchase_request_item.data["PricePerUnit"] * purchase_request["RequestQuantity"] #lahat ng nasa pr (tama lang to)
-    for ppmp_item in ppmp_items.data:
-        available_lieu_pool_funds += ppmp_item["AvailableQuantity"] * ppmp_item["PricePerUnit"]
+    available_lieu_pool_funds = get_available_lieu_pool_funds(ppmp_items)
     open_funds = total_annual_budget - available_lieu_pool_funds
     logs = private_supabase.table("PROCUREMENT_LOG").select("*").execute()
     logs = [
@@ -450,6 +456,14 @@ def get_in_lieu_data(request):
     if user is None:
         return Response({"error": "User not found"}, status=401)
     user_fullname = user["FullName"]
+    year = request.POST["year"]
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
+    total_abc = fiscal_year["TotalABC"]
+    ppmp_items = get_ppmp_items(year)
+    open_funds = total_abc - get_available_lieu_pool_funds(ppmp_items)
+    ppmp_reallocation_data = [{
+
+    }for ppmp_item in ppmp_items.data]
 
 @api_view(['POST'])
 def get_signatories(request):
