@@ -22,4 +22,4 @@ def get_admin_name(request):
         return Response({"error": "User not found"}, status=401)
     else:
         admin_name = private_supabase.table("USER").select("FullName").eq("Role", "Admin").single().execute()
-        return Response(admin_name.data, status=200)
+        return Response({"fullname": admin_name.data["FullName"]}, status=200)
