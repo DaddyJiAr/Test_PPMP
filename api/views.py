@@ -541,25 +541,27 @@ def create_in_lieu_request(request):
             "FulfilledQuantity": 0,
             "FiscalYearID": fiscal_year_id,
         }for item in new_items_list]
-        response = private_supabase.table("PPMP_ITEM").insert(new_items).execute()
-        if not response.data:
-            return Response({"error": "Error inserting PPMP item "}, status=401)
-        inserted_items = response.data
-        print(inserted_items)
+        # response = private_supabase.table("PPMP_ITEM").insert(new_items).execute()
+        # if not response.data:
+        #     return Response({"error": "Error inserting PPMP item "}, status=401)
+        # inserted_items = response.data
+        # print(inserted_items)
         # pairs the original_item to new_items_list and inserted_item to inserted_items
         # parang for each pero dalawa
         #gagana lang daw pag same dictionary
-        for original_item, inserted_item in zip(new_items_list, inserted_items):
-            original_item["itemId"] = inserted_item["ItemID"]
-        print("new_items_list:", new_items_list)
-        print("in_lieu_addition:", in_lieu_addition)
+        # for original_item, inserted_item in zip(new_items_list, inserted_items):
+        #     original_item["itemId"] = inserted_item["ItemID"]
+        # print("new_items_list:", new_items_list)
+        # print("in_lieu_addition:", in_lieu_addition)
+        # di pala muna dapat ma insert
+
         insert_in_lieu_addition = [{
             "ItemName": item["name"],
             "UnitName": item["measurementUnit"],
             "UnitPrice": item["unitPrice"],
             "Quantity": item["quantity"],
             "InLieuID": in_lieu_id,
-            "ItemID": item["itemId"],
+            # "ItemID": item["itemId"],
         }for item in in_lieu_addition]
     response = private_supabase.table("IN_LIEU_ADDITION").insert(insert_in_lieu_addition).execute()
     print(insert_in_lieu_addition)
