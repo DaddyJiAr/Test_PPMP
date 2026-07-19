@@ -200,7 +200,7 @@ def export(request):
     response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") #create response with file format
     response["Content-Disposition"] = 'attachment; filename="ppmp.xlsx"' #make file downloadable
     df.to_excel(response, index=False) #put file in the response
-    create_procurement_log("PPMP", "upload", year, user["FullName"])
+    create_procurement_log("PPMP", "upload", year, user["FullName"], "")
     return response
 
 
