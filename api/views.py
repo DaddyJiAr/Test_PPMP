@@ -488,7 +488,7 @@ def get_in_lieu_data(request):
     }, status=200)
 
 
-@api_view(["PUT"])
+@api_view(["POST"])
 def create_in_lieu_request(request):
     user = get_user(request)
     if user is None:
