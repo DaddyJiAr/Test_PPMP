@@ -511,32 +511,34 @@ def create_in_lieu_request(request):
     budget_impact = payload["requiredBudget"]
     status = "Pending"
     user_id = user["UserID"]
-
+    fiscal_year_id = 0
+    if len(in_lieu_items) > 0:
+        ppmp_item_id = in_lieu_items[0]["itemId"]
+        ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
+        fiscal_year_id = ppmp_item.data["FiscalYearID"]
+    else:
+        current_year = datetime.now().year
+        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", current_year).single().execute()
+        if not fiscal_year.data:
+            return Response({"error": "Fiscal year missing"}, status=401)
+        fiscal_year_id = fiscal_year.data["FiscalYearID"]
     response = private_supabase.table("IN_LIEU").insert({
         "BudgetImpact": budget_impact,
         "Status": status,
         "UserID": user_id,
         "OpenFundsUtilized": open_funds_utilized,
+        "FiscalYearID": fiscal_year_id,
     }).execute()
     if not response.data:
         return Response({"error": "Error inserting In Lieu"}, status=401)
     in_lieu_id = response.data[0]["InLieuID"]
-    fiscal_year_id = 0
+
     if len(in_lieu_items) > 0:
         insert_in_lieu_items = [{ # parang finormat ko lang para madali i-insert
             "QuantityReduced": in_lieu_item["reduceQuantity"],
             "ItemID": in_lieu_item["itemId"],
             "InLieuID": in_lieu_id,
         }for in_lieu_item in in_lieu_items]
-        ppmp_item_id = insert_in_lieu_items[0]["ItemID"]
-        ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
-        fiscal_year_id = ppmp_item.data["FiscalYearID"]
-    else:
-        current_year = datetime.now().year
-        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", current_year).single().execute()
-        if not response.data:
-            return Response({"error": "Fiscal year missing"}, status=401)
-        fiscal_year_id = fiscal_year.data["FiscalYearID"]
 
     new_items_list = [item for item in in_lieu_addition if item["added"]]
     new_items = []
@@ -605,6 +607,88 @@ def create_in_lieu_request(request):
         )
     return Response({"stats": "success", "item_id": in_lieu_id, "new": new_items,
                      "ppmp in lieu items": insert_in_lieu_items if len(in_lieu_items) > 0 else []})
+
+
+@api_view(['POST'])
+def get_in_lieu_approvals(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "Invalid token"}, status=401)
+    year = request.POST["year"]
+    fiscal_year_id = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).single().execute()
+    fiscal_year_id = fiscal_year_id.data["FiscalYearID"]
+    role = user["Role"]
+    in_lieus = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year_id).execute()
+    in_lieu_ids = list({
+        in_lieu["InLieuID"]
+        for in_lieu in in_lieus.data
+        if in_lieu["InLieuID"] is not None
+    })
+    in_lieu_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").in_("InLieuID", in_lieu_ids).execute()
+    in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
+    additions_map = {}
+    for addition in in_lieu_additions.data:
+        additions_map.setdefault(addition["InLieuID"], []).append(addition) # creates a dict where the key is inlieuid
+    in_lieu_items_map = {}
+    for in_lieu_item in in_lieu_items.data:
+        in_lieu_items_map.setdefault(in_lieu_item["InLieuID"], []).append(in_lieu_item)
+    in_lieu_item_ids = list({  # get all ids from in_lieu_items
+        in_lieu["ItemID"]
+        for in_lieu in in_lieu_items.data
+        if in_lieu["ItemID"] is not None
+    })
+    in_lieu_items_ppmp = private_supabase.table("PPMP_ITEM").select("*").in_("ItemID", in_lieu_item_ids).execute()
+    in_lieu_items_ppmp_map = {}
+    for in_lieu_item in in_lieu_items_ppmp.data:
+        in_lieu_items_ppmp_map.setdefault(in_lieu_item["ItemID"], []).append(in_lieu_item)
+    ppmp_lookup = {
+        item["ItemID"]: item
+        for item in in_lieu_items_ppmp.data
+    }
+    user_ids = list({ # get all users with inlieu requests
+        in_lieu["UserID"]
+        for in_lieu in in_lieus.data
+        if in_lieu["UserID"] is not None
+    })
+    users = private_supabase.table("USER").select("UserID, FullName").in_("UserID", user_ids).execute()
+    user_lookup = { # creates a dict where the key is UserID
+        user["UserID"]: user["FullName"]
+        for user in users.data
+    }
+    in_lieu_approval_data = [
+            {
+                "inLieuId": in_lieu["InLieuID"],
+                "requestDate": in_lieu["created_at"],
+                "requestedBy": user_lookup.get(in_lieu["UserID"]),
+                "openFundsUtilized": in_lieu["OpenFundsUtilized"],
+                "inLieuAdditionItems": [
+                    {
+                        "itemId": in_lieu_addition["ItemID"],
+                        "quantity": in_lieu_addition["Quantity"],
+                        "itemName": in_lieu_addition["ItemName"],
+                        "unitMeasurement": in_lieu_addition["UnitName"],
+                        "priceCatalog": in_lieu_addition["UnitPrice"],
+                    }
+                    for in_lieu_addition in additions_map.get(in_lieu["InLieuID"], [])
+                ],
+                "inLieuReducedItems": [
+                    {
+                        "itemId": in_lieu_item["ItemID"],
+                        "quantityReduced": in_lieu_item["QuantityReduced"],  # IN_LIEU_ITEM
+                        "itemName": ppmp_lookup[in_lieu_item["ItemID"]]["ItemName"],
+                        "unitMeasurement": ppmp_lookup[in_lieu_item["ItemID"]]["UnitName"],
+                        "priceCatalog": ppmp_lookup[in_lieu_item["ItemID"]]["PricePerUnit"],
+                        "plannedQuantity": ppmp_lookup[in_lieu_item["ItemID"]]["PlannedQuantity"],
+                        "availableQuantityAfter": ppmp_lookup[in_lieu_item["ItemID"]]["AvailableQuantity"] - in_lieu_item["QuantityReduced"],
+                    }
+                    for in_lieu_item in in_lieu_items_map.get(in_lieu["InLieuID"], [])
+                ],
+                "budgetImpact": in_lieu["BudgetImpact"],
+                "status": in_lieu["Status"],
+            }
+        for in_lieu in in_lieus.data
+        ]
+    return Response({"userRole": role, "inLieuApprovalData": in_lieu_approval_data}, status=200)
 
 @api_view(['POST'])
 def get_signatories(request):
