@@ -48,8 +48,6 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
     item_name1,
     value=None,
     quantity1=None,
-    quantity2=None,
-    item_name2=None
 ):
     action_type = action_type.lower()
     description = ""
@@ -68,12 +66,24 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
         if action_type == "cancel":
             description = f"Purchase request of {quantity1} {item_name1} is cancelled"
     elif entity_type == "In Lieu":
-        if action_type == "reallocate":
-            description = f"{quantity1} {item_name1} In Lieu of {quantity2} {item_name2} requested"
-        if action_type == "approved":
-            description = f"{quantity1} {item_name1} In Lieu of {quantity2} {item_name2} approved"
-        if action_type == "rejected":
-            description = f"{quantity1} {item_name1} In Lieu of {quantity2} {item_name2} rejected"
+        if action_type == "reallocate_reduce":
+            description = f"{quantity1} {item_name1} reduced through In Lieu request"
+            action_type = "reallocate"
+        if action_type == "reallocate_add":
+            description = f"{quantity1} {item_name1} requested through In Lieu request"
+            action_type = "reallocate"
+        if action_type == "approved_reduce":
+            description = f"{quantity1} {item_name1} reduced through In Lieu request approval"
+            action_type = "approved"
+        if action_type == "approved_add":
+            description = f"{quantity1} {item_name1} requested through In Lieu request approval"
+            action_type = "approved"
+        if action_type == "rejected_reduce":
+            description = f"{quantity1} {item_name1} added back in through In Lieu request rejection"
+            action_type = "rejected"
+        if action_type == "rejected_add":
+            description = f"{quantity1} {item_name1} reduced through In Lieu request rejection"
+            action_type = "rejected"
     print("Description "+ description)
     response = private_supabase.table("PROCUREMENT_LOG").insert({
         "EntityType": entity_type,
@@ -200,7 +210,7 @@ def export(request):
     response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") #create response with file format
     response["Content-Disposition"] = 'attachment; filename="ppmp.xlsx"' #make file downloadable
     df.to_excel(response, index=False) #put file in the response
-    create_procurement_log("PPMP", "upload", year, user["FullName"], "")
+    create_procurement_log("PPMP", "export", year, user["FullName"], "")
     return response
 
 
@@ -513,7 +523,7 @@ def create_in_lieu_request(request):
     in_lieu_id = response.data[0]["InLieuID"]
     fiscal_year_id = 0
     if len(in_lieu_items) > 0:
-        insert_in_lieu_items = [{
+        insert_in_lieu_items = [{ # parang finormat ko lang para madali i-insert
             "QuantityReduced": in_lieu_item["reduceQuantity"],
             "ItemID": in_lieu_item["itemId"],
             "InLieuID": in_lieu_id,
@@ -555,25 +565,44 @@ def create_in_lieu_request(request):
         # print("in_lieu_addition:", in_lieu_addition)
         # di pala muna dapat ma insert
 
-        insert_in_lieu_addition = [{
-            "ItemName": item["name"],
-            "UnitName": item["measurementUnit"],
-            "UnitPrice": item["unitPrice"],
-            "Quantity": item["quantity"],
-            "InLieuID": in_lieu_id,
-            # "ItemID": item["itemId"],
-        }for item in in_lieu_addition]
-    response = private_supabase.table("IN_LIEU_ADDITION").insert(insert_in_lieu_addition).execute()
-    print(insert_in_lieu_addition)
-    if not response.data:
-        return Response({"error": "Error inserting In Lieu Items"}, status=401)
+    insert_in_lieu_addition = [{
+        "ItemName": item["name"],
+        "UnitName": item["measurementUnit"],
+        "UnitPrice": item["unitPrice"],
+        "Quantity": item["quantity"],
+        "InLieuID": in_lieu_id,
+        "ItemID": item["itemId"] if not item["added"] is not None else None,
+    }for item in in_lieu_addition]
+    if len(insert_in_lieu_addition) > 0:
+        response = private_supabase.table("IN_LIEU_ADDITION").insert(insert_in_lieu_addition).execute()
+        print(insert_in_lieu_addition)
+        if not response.data:
+            return Response({"error": "Error inserting In Lieu Items"}, status=401)
     if len(in_lieu_items) > 0:
         response = private_supabase.table("IN_LIEU_ITEM").insert(insert_in_lieu_items).execute()
         if not response.data:
             return Response({"error": "Error inserting In Lieu Items"}, status=401)
     year = get_year_str(fiscal_year_id)
-    # response = create_procurement_log("In Lieu", "reallocate", year, user["FullName"],
-    #                                   value=budget_impact, quantity1=request_quantity, item_name1=item_name)
+    for reduced in in_lieu_items: # in_lieu_items para may name
+        create_procurement_log(
+            "In Lieu",
+            "reallocate_reduce",
+            year,
+            user["FullName"],
+            item_name1=reduced["itemName"],
+            quantity1=reduced["reduceQuantity"],
+            value=budget_impact
+        )
+    for added in insert_in_lieu_addition:
+        create_procurement_log(
+            "In Lieu",
+            "reallocate_add",
+            year,
+            user["FullName"],
+            item_name1=added["ItemName"],
+            quantity1=added["Quantity"],
+            value=budget_impact
+        )
     return Response({"stats": "success", "item_id": in_lieu_id, "new": new_items,
                      "ppmp in lieu items": insert_in_lieu_items if len(in_lieu_items) > 0 else []})
 
