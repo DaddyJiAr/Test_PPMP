@@ -703,6 +703,7 @@ def get_signatories(request):
     if response is None:
         return Response({"error": "Document type not found"}, status=401)
     signatories = [{
+        "signatoryId": signatory["SignatoryID"],
         "fullName": signatory["FullName"],
         "position": signatory["PositionTitle"],
     }for signatory in response.data]
