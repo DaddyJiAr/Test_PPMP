@@ -22,7 +22,6 @@ def get_admin_name(request):
         admin_name = private_supabase.table("USER").select("FullName").eq("Role", "Admin").single().execute()
         return Response({"fullname": admin_name.data["FullName"]}, status=200)
 
-
 @api_view(['PUT'])
 def update_fullname(request):
     user = get_user(request)

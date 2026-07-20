@@ -674,8 +674,8 @@ def get_in_lieu_approvals(request):
                 "inLieuReducedItems": [
                     {
                         "itemId": in_lieu_item["ItemID"],
-                        "quantityReduced": ppmp_lookup[in_lieu_item["ItemID"]]["ItemName"],  # IN_LIEU_ITEM
-                        "itemName": ppmp_lookup[in_lieu_item["ItemID"]]["Quantity"],
+                        "quantity": in_lieu_item["QuantityReduced"],  # IN_LIEU_ITEM
+                        "itemName": ppmp_lookup[in_lieu_item["ItemID"]]["ItemName"],
                         "unitMeasurement": ppmp_lookup[in_lieu_item["ItemID"]]["UnitName"],
                         "priceCatalog": ppmp_lookup[in_lieu_item["ItemID"]]["PricePerUnit"],
                         "plannedQuantity": ppmp_lookup[in_lieu_item["ItemID"]]["PlannedQuantity"],
