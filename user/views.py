@@ -21,3 +21,36 @@ def get_admin_name(request):
     else:
         admin_name = private_supabase.table("USER").select("FullName").eq("Role", "Admin").single().execute()
         return Response({"fullname": admin_name.data["FullName"]}, status=200)
+
+@api_view(['POST'])
+def get_signatories(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+    document_type = request.POST["documentType"]
+    if document_type is None:
+        return Response({"error": "Document type not found"}, status=401)
+    response = private_supabase.table("DOCUMENT_SIGNATORY").select("*").eq("DocumentType", document_type.upper()).execute()
+    if response is None:
+        return Response({"error": "Document type not found"}, status=401)
+    signatories = [{
+        "fullName": signatory["FullName"],
+        "position": signatory["PositionTitle"],
+    }for signatory in response.data]
+    return Response({"signatories": signatories}, status=200)
+
+
+@api_view(['PUT'])
+def update_fullname(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+    else:
+        new_fullname = request.data["fullName"]
+        response = private_supabase.table("USER").update({
+            "FullName": new_fullname
+        }).eq("UserID", user["UserID"]).execute()
+        if response is None:
+            return Response({"error": "Error updating user"}, status=500)
+        else:
+            return Response({"status": "success"}, status=200)

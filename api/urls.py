@@ -17,6 +17,5 @@ urlpatterns = [
     path('in_lieu_data/', views.get_in_lieu_data),
     path('create_in_lieu/', views.create_in_lieu_request),
     path('in_lieu_approvals/', views.get_in_lieu_approvals),
-    path('signatories/', views.get_signatories),
 
 ]

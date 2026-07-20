@@ -689,20 +689,3 @@ def get_in_lieu_approvals(request):
         for in_lieu in in_lieus.data
         ]
     return Response({"userRole": role, "inLieuApprovalData": in_lieu_approval_data}, status=200)
-
-@api_view(['POST'])
-def get_signatories(request):
-    user = get_user(request)
-    if user is None:
-        return Response({"error": "User not found"}, status=401)
-    document_type = request.POST["documentType"]
-    if document_type is None:
-        return Response({"error": "Document type not found"}, status=401)
-    response = private_supabase.table("DOCUMENT_SIGNATORY").select("*").eq("DocumentType", document_type.upper()).execute()
-    if response is None:
-        return Response({"error": "Document type not found"}, status=401)
-    signatories = [{
-        "fullName": signatory["FullName"],
-        "position": signatory["PositionTitle"],
-    }for signatory in response.data]
-    return Response({"signatories": signatories}, status=200)

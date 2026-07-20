@@ -18,6 +18,10 @@ def get_user(request):
     except Exception:
         return None
 
+def get_auth_user(request):
+    token = get_token(request)
+    user = private_supabase.auth.get_user(token).user
+    return user
 
 def get_token(request):
     auth = request.headers.get("Authorization")

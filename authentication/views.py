@@ -1,7 +1,9 @@
+from rest_framework import response
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
+from supabase_auth.errors import AuthApiError
 
-from api.utils import private_supabase, get_user, get_token, get_role_token, public_supabase
+from api.utils import private_supabase, get_user, get_token, get_role_token, public_supabase, get_auth_user
 
 
 def get_current_user(id):
@@ -31,6 +33,29 @@ def login(request):
         })
     except Exception:
         return Response({"status": "error", "error": "Unauthorized",}, status=401)
+
+
+@api_view(['PUT'])
+def update_password(request):
+    try:
+        user = get_auth_user(request)
+    except:
+        return Response({"error": "Invalid token"}, status=401)
+    current_password = request.data['currentPassword']
+    new_password = request.POST['newPassword']
+    try:
+        response = private_supabase.auth.sign_in_with_password({'email': user.email, 'password': current_password})
+        if response is not None:
+            response = private_supabase.auth.update_user({
+                "password": new_password,
+            })
+            if response is not None:
+                return Response({"status": "success"}, status=200)
+            else:
+                return Response({"error": "Error updating password"}, status=500)
+    except AuthApiError:
+        return Response({"error": "Invalid login credentials"}, status=401)
+    return Response(user.email)
 
 @api_view(['GET'])
 def get_role(request):
