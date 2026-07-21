@@ -44,3 +44,11 @@ def check_user(request):
         return False
     else:
         return True
+
+def check_admin(request):
+    token = get_token(request)
+    user = get_user(token)
+    if user is None:
+        return False
+    else:
+        return user["Role"] == "Admin"
