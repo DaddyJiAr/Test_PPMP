@@ -2,6 +2,7 @@ from datetime import datetime
 import json
 
 from django.http import HttpResponse
+from postgrest import APIError
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 import pandas as pd
@@ -507,7 +508,7 @@ def create_in_lieu_request(request):
     payload = json.loads(request.POST.get("payload"))
     in_lieu_items = payload["itemsToReduce"]
     in_lieu_addition = payload["itemsToProcure"]
-    open_funds_utilized = payload["lieuFundedValue"]
+    open_funds_utilized = payload["openFundsUtilized"]
     budget_impact = payload["requiredBudget"]
     status = "Pending"
     user_id = user["UserID"]
@@ -573,7 +574,7 @@ def create_in_lieu_request(request):
         "UnitPrice": item["unitPrice"],
         "Quantity": item["quantity"],
         "InLieuID": in_lieu_id,
-        "ItemID": item["itemId"] if not item["added"] is not None else None,
+        "ItemID": item["itemId"] if not item["added"] else None,
     }for item in in_lieu_addition]
     if len(insert_in_lieu_addition) > 0:
         response = private_supabase.table("IN_LIEU_ADDITION").insert(insert_in_lieu_addition).execute()
@@ -689,6 +690,74 @@ def get_in_lieu_approvals(request):
         for in_lieu in in_lieus.data
         ]
     return Response({"userRole": role, "inLieuApprovalData": in_lieu_approval_data}, status=200)
+
+@api_view(['PUT'])
+def update_in_lieu_status(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+
+    in_lieu_id = request.POST.get("inLieuId")
+    status = request.POST.get("status")
+    try:
+        in_lieu = private_supabase.table("IN_LIEU").select("*").eq("InLieuID", in_lieu_id).single().execute()
+        in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").eq("InLieuID", in_lieu_id).execute()
+        in_lieu_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").eq("InLieuID", in_lieu_id).execute()
+    except APIError:
+        return Response({"error": "InLieu not found", "InLieuID": in_lieu_id}, status=404)
+    in_lieu = in_lieu.data
+    in_lieu_items = in_lieu_items.data
+    in_lieu_additions = in_lieu_additions.data
+    in_lieu_item_ids = [in_lieu_item["ItemID"] for in_lieu_item in in_lieu_items]
+    in_lieu_additions_without_id = [in_lieu_addition for in_lieu_addition in in_lieu_additions if not in_lieu_addition["ItemID"]]
+    in_lieu_additions_with_id = [in_lieu_addition for in_lieu_addition in in_lieu_additions if in_lieu_addition["ItemID"]]
+    for in_lieu_addition in in_lieu_additions:
+        if in_lieu_addition["ItemID"]:
+            in_lieu_additions_with_id.setdefault(
+                in_lieu_addition["ItemID"], []
+            ).append(in_lieu_addition)
+
+    if len(in_lieu_items) > 0:
+        ppmp_item_id = in_lieu_items[0]["itemId"]
+        ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
+        fiscal_year_id = ppmp_item.data["FiscalYearID"]
+    else:
+        current_year = datetime.now().year
+        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year",
+                                                                                      current_year).single().execute()
+        if not fiscal_year.data:
+            return Response({"error": "Fiscal year missing"}, status=401)
+        fiscal_year_id = fiscal_year.data["FiscalYearID"]
+
+    for in_lieu_addition in in_lieu_additions_without_id:
+        response = private_supabase.table("PPMP_ITEM").insert({
+            "ItemName": in_lieu_addition["ItemName"],
+            "UnitName": in_lieu_addition["UnitName"],
+            "PlannedQuantity": int(in_lieu_addition["Quantity"]),
+            "AvailableQuantity": int(in_lieu_addition["Quantity"]),
+            "PricePerUnit": float(in_lieu_addition["UnitPrice"]),
+            "PendingQuantity": 0,
+            "FulfilledQuantity": 0,
+            "FiscalYearID": fiscal_year_id,
+        }).execute()
+        in_lieu_addition["ItemID"] = response.data[0]["ItemID"]
+
+    for in_lieu_item_id in in_lieu_item_ids:
+        quantity_to_reduce = private_supabase.table("IN_LIEU_ITEM").select("QuantityReduced").eq("InLieuID", in_lieu_item_id).single().execute()
+        quantity_to_reduce = quantity_to_reduce.data["QuantityReduced"]
+        planned_quantity = get_item_detail(in_lieu_item_id, "PlannedQuantity")
+        available_quantity = get_item_detail(in_lieu_item_id, "AvailableQuantityAfter")
+        if planned_quantity - quantity_to_reduce < 0 or available_quantity - quantity_to_reduce < 0:
+            return Response({"error": "Quantity to reduce is greater than planned quantity or available quantity"})
+        private_supabase.table("PPMP_ITEM").update({
+            "PlannedQuantity": planned_quantity - quantity_to_reduce,
+            "AvailableQuantity": available_quantity - quantity_to_reduce,
+        })
+
+    response = private_supabase.table("IN_LIEU").update({"Status": status}).eq("InLieuID", in_lieu_id).execute()
+    if response is None:
+        return Response({"error": "Error updating in lieu request", "InLieuID": in_lieu_id}, status=500)
+    return Response({"status": "success"}, status=200)
 
 
 @api_view(['POST'])
