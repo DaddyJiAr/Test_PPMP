@@ -77,13 +77,13 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
             description = f"{quantity1} {item_name1} reduced through In Lieu request approval"
             action_type = "approved"
         if action_type == "approved_add":
-            description = f"{quantity1} {item_name1} requested through In Lieu request approval"
+            description = f"{quantity1} {item_name1} added through In Lieu request approval"
             action_type = "approved"
         if action_type == "rejected_reduce":
-            description = f"{quantity1} {item_name1} added back in through In Lieu request rejection"
+            description = f"Reduction of {quantity1} {item_name1} is rejected through In Lieu request rejection"
             action_type = "rejected"
         if action_type == "rejected_add":
-            description = f"{quantity1} {item_name1} reduced through In Lieu request rejection"
+            description = f"Addition of {quantity1} {item_name1} is rejected through In Lieu request rejection"
             action_type = "rejected"
     print("Description "+ description)
     response = private_supabase.table("PROCUREMENT_LOG").insert({
@@ -699,10 +699,65 @@ def update_in_lieu_status(request):
 
     in_lieu_id = request.POST.get("inLieuId")
     status = request.POST.get("status")
-
+    budget_impact = 0
     if status == "Rejected":
         try:
             in_lieu = private_supabase.table("IN_LIEU").select("*").eq("InLieuID", in_lieu_id).single().execute()
+            budget_impact = in_lieu.data["BudgetImpact"]
+            in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").eq("InLieuID", in_lieu_id).execute()
+            in_lieu_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").eq("InLieuID",
+                                                                                          in_lieu_id).execute()
+            if len(in_lieu_items.data) > 0:
+                ppmp_item_id = in_lieu_items.data[0]["ItemID"]
+                ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID",
+                                                                                          ppmp_item_id).single().execute()
+                fiscal_year_id = ppmp_item.data["FiscalYearID"]
+                fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID",
+                                                                                   fiscal_year_id).single().execute()
+            else:
+                current_year = datetime.now().year
+                fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year",
+                                                                                   current_year).single().execute()
+                if not fiscal_year.data:
+                    return Response({"error": "Fiscal year missing"}, status=401)
+                fiscal_year_id = fiscal_year.data["FiscalYearID"]
+            response = private_supabase.table("IN_LIEU").update({"Status": status}).eq("InLieuID", in_lieu_id).execute()
+            year = fiscal_year.data["Year"]
+            status = status.lower()
+            for added in in_lieu_additions.data:
+                create_procurement_log(
+                    "In Lieu",
+                    status + "_add",
+                    year,
+                    user["FullName"],
+                    item_name1=added["ItemName"],
+                    quantity1=added["Quantity"],
+                    value=budget_impact
+                )
+
+            reduction_map = {item["ItemID"]: item["QuantityReduced"] for item in in_lieu_items.data}
+            in_lieu_item_ids = list(reduction_map.keys())
+
+            # 2. Fetch the names from Supabase in one go
+            response = private_supabase.table("PPMP_ITEM").select("ItemID, ItemName").in_("ItemID",
+                                                                                          in_lieu_item_ids).execute()
+            in_lieu_items = response.data
+
+            # 3. Loop and log using the merged data context
+            for item in in_lieu_items:
+                item_id = item["ItemID"]
+                item_name = item["ItemName"]
+                quantity_reduced = reduction_map.get(item_id)  # Get matching quantity
+
+                create_procurement_log(
+                    "In Lieu",
+                    status + "_reduce",
+                    year,
+                    user["FullName"],
+                    item_name1=item_name,
+                    quantity1=quantity_reduced,
+                    value=budget_impact
+                )
             response = private_supabase.table("IN_LIEU").update({"Status": status}).eq("InLieuID", in_lieu_id).execute()
             if response is None:
                 return Response({"error": "Error updating in lieu request", "InLieuID": in_lieu_id}, status=500)
@@ -717,6 +772,7 @@ def update_in_lieu_status(request):
         except APIError:
             return Response({"error": "InLieu not found", "InLieuID": in_lieu_id}, status=404)
         in_lieu = in_lieu.data
+        budget_impact = in_lieu["BudgetImpact"]
         in_lieu_items = in_lieu_items.data
         in_lieu_additions = in_lieu_additions.data
         in_lieu_item_ids = [in_lieu_item["ItemID"] for in_lieu_item in in_lieu_items]
@@ -727,15 +783,15 @@ def update_in_lieu_status(request):
                 in_lieu_additions_with_id.setdefault(
                     in_lieu_addition["ItemID"], []
                 ).append(in_lieu_addition)
-
+        fiscal_year = None
         if len(in_lieu_items) > 0:
-            ppmp_item_id = in_lieu_items[0]["itemId"]
+            ppmp_item_id = in_lieu_items[0]["ItemID"]
             ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
             fiscal_year_id = ppmp_item.data["FiscalYearID"]
+            fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", fiscal_year_id).single().execute()
         else:
             current_year = datetime.now().year
-            fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year",
-                                                                                          current_year).single().execute()
+            fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", current_year).single().execute()
             if not fiscal_year.data:
                 return Response({"error": "Fiscal year missing"}, status=401)
             fiscal_year_id = fiscal_year.data["FiscalYearID"]
@@ -754,7 +810,9 @@ def update_in_lieu_status(request):
             in_lieu_addition["ItemID"] = response.data[0]["ItemID"]
 
         for in_lieu_item_id in in_lieu_item_ids:
-            quantity_to_reduce = private_supabase.table("IN_LIEU_ITEM").select("QuantityReduced").eq("InLieuID", in_lieu_item_id).single().execute()
+            quantity_to_reduce = private_supabase.table("IN_LIEU_ITEM").select("QuantityReduced").eq("InLieuID", in_lieu_item_id).maybe_single().execute()
+            if quantity_to_reduce is None:
+                continue
             quantity_to_reduce = quantity_to_reduce.data["QuantityReduced"]
             planned_quantity = get_item_detail(in_lieu_item_id, "PlannedQuantity")
             available_quantity = get_item_detail(in_lieu_item_id, "AvailableQuantityAfter")
@@ -766,9 +824,46 @@ def update_in_lieu_status(request):
             })
 
         response = private_supabase.table("IN_LIEU").update({"Status": status}).eq("InLieuID", in_lieu_id).execute()
+        year = fiscal_year.data["Year"]
+        status = status.lower()
+        for added in in_lieu_additions:
+            create_procurement_log(
+                "In Lieu",
+                status + "_add",
+                year,
+                user["FullName"],
+                item_name1=added["ItemName"],
+                quantity1=added["Quantity"],
+                value=budget_impact
+            )
+
+        reduction_map = {item["ItemID"]: item["QuantityReduced"] for item in in_lieu_items}
+        in_lieu_item_ids = list(reduction_map.keys())
+
+        # 2. Fetch the names from Supabase in one go
+        response = private_supabase.table("PPMP_ITEM").select("ItemID, ItemName").in_("ItemID",
+                                                                                      in_lieu_item_ids).execute()
+        in_lieu_items = response.data
+
+        # 3. Loop and log using the merged data context
+        for item in in_lieu_items:
+            item_id = item["ItemID"]
+            item_name = item["ItemName"]
+            quantity_reduced = reduction_map.get(item_id)  # Get matching quantity
+
+            create_procurement_log(
+                "In Lieu",
+                status + "_reduce",
+                year,
+                user["FullName"],
+                item_name1=item_name,
+                quantity1=quantity_reduced,
+                value=budget_impact
+            )
+
         if response is None:
             return Response({"error": "Error updating in lieu request", "InLieuID": in_lieu_id}, status=500)
-        return Response({"status": "success"}, status=200)
+        return Response({"status": status}, status=200)
 
 
 @api_view(['POST'])
