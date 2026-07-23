@@ -1,11 +1,13 @@
 from datetime import datetime
 import json
+import pandas as pd
 
 from django.http import HttpResponse
 from postgrest import APIError
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
-import pandas as pd
+from datetime import datetime
+
 from .utils import private_supabase, get_user
 from excel import testingPPMP, upload_excel
 
@@ -115,6 +117,65 @@ def update_pr_status(status, item_id, quantity):
         }).eq("ItemID", item_id).execute()
     return response is not None
 
+@api_view(['POST'])
+def get_inlieu_suggestions(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+
+    totalPrice = float(request.POST["Sum"])
+
+    aggregate = private_supabase.rpc("get_aggregate_for_inlieu").execute()
+    aggregateData = aggregate.data
+
+    df = pd.DataFrame(aggregateData)
+    
+    df["PriceDifference"] = (df["PricePerUnit"] - totalPrice) / totalPrice
+    df["PriceScore"] = (df["PriceDifference"] - df["PriceDifference"].min()) / (df["PriceDifference"].max() - df["PriceDifference"].min())
+    df["FrequentScore"] = df["Occurrence"].min() * df["QuantityReduced"].min() / df["Occurrence"].max() * df["QuantityReduced"].max()
+    df["StaleScore"] = min((datetime.now().year - df["InLieuYear"].min()) / df["InLieuYear"].max(), 1)
+    df["FinalScore"] = df["FrequentScore"] * .4 + df["PriceScore"] * .3 + df["StaleScore"] * .3
+    df["Efficiency"] = df["FinalScore"] / df["PricePerUnit"].replace(0, df["PricePerUnit"].median())
+    
+    df = df.sort_values("Efficiency", ascending=False)
+
+    total = 0
+    selected = []
+    cleaned = []
+    for _, row in df.iterrows():
+        if total >= totalPrice:
+            break
+        
+        row = {
+            "itemId": row["ItemID"],
+            "itemName": row["ItemName"],
+            "unitMeasurement": row["UnitName"],
+            "plannedQuantity": row["PlannedQuantity"],
+            "availableQuantity": row["AvailableQuantity"],
+            "pendingQuantity": row["PendingQuantity"],
+            "fulfilledQuantity": row["FulfilledQuantity"],
+            "priceCatalog": row["PricePerUnit"], 
+            "reduceAmount":  1  
+        }
+        
+        dupe = False
+        
+        for cleanedRow in cleaned:
+            if row["itemId"] == cleanedRow["itemId"]:
+                cleanedRow["reduceAmount"] = cleanedRow["reduceAmount"] + 1
+                dupe = True
+                break
+    
+        selected.append(row)
+        
+        if not dupe:
+            cleaned.append(row)
+            
+        total += row["priceCatalog"]
+
+    df = None
+
+    return Response(data={"data": cleaned, "data_raw": selected}, status=200)
 
 @api_view(['POST'])
 def get_ppmp_preview(request):
