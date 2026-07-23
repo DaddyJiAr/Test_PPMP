@@ -38,3 +38,7 @@
 # # from excel import testingPPMP
 # #
 # # testingPPMP("PPMP.xlsx", 11, 1, 2, 15, 16)
+from api.utils import private_supabase
+
+response = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", 69).execute()
+print(response.data)

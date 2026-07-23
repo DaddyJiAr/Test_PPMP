@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from datetime import datetime
 
-from .utils import private_supabase, get_user
+from .utils import private_supabase, get_user, check_fields
 from excel import testingPPMP, upload_excel
 
 def get_item(item_id):
@@ -944,3 +944,28 @@ def get_signatories(request):
         "position": signatory["PositionTitle"],
     }for signatory in response.data]
     return Response({"signatories": signatories}, status=200)
+
+@api_view(['PUT'])
+def update_signatories(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+    missing_fields = check_fields(["signatories"], request)
+    try:
+        if missing_fields:
+            return Response({"error": "Missing fields", "missingFields": missing_fields}, status=400)
+    except Exception as e:
+        return Response({"error": "Invalid fields"}, status=400)
+    signatories = (request.data["signatories"])
+    signatory_id = -1
+    try:
+        for signatory in signatories:
+            signatory_id = signatory["signatoryId"]
+            private_supabase.table("DOCUMENT_SIGNATORY").update({
+                "FullName": signatory["fullName"],
+                "PositionTitle": signatory["positionTitle"],
+            }).eq("SignatoryID", signatory_id).execute()
+        pass
+    except Exception as e:
+        return Response({"error": "Error updating signatories", "signatoryId": signatory_id, "err": f"{e}"}, status=500)
+    return Response({"status": "success"}, status=200)

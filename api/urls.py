@@ -16,8 +16,9 @@ urlpatterns = [
     path('procurement_status/', views.update_purchase_request_status),
     path('in_lieu_data/', views.get_in_lieu_data),
     path('create_in_lieu/', views.create_in_lieu_request),
+    path('smart-suggest/', views.get_inlieu_suggestions),
     path('in_lieu_approvals/', views.get_in_lieu_approvals),
     path('in_lieu_approval_status/', views.update_in_lieu_status),
     path('signatories/', views.get_signatories),
-    path('smart-suggest/', views.get_inlieu_suggestions)
+    path('update_signatories/', views.update_signatories)
 ]
