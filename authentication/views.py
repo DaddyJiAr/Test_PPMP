@@ -17,8 +17,18 @@ def get_users(request):
     if user is None:
         return Response({"error": "Unauthorized", "user": user, "token": token}, status=401)
     response = private_supabase.table("USER").select("*").execute()
+    users = [{
+        userId: user["UserID"],
+        fullname: user["FullName"],
+        email: user["EmailAddress"],
+        role: user["Role"],
+        dateCreated: user["created_at"],
+        status: user["Status"],
+    }
+    for user in response.data
+    ]
     print(response.data)
-    return Response({"user": user, "token": token})
+    return Response({"user": users})
 
 @api_view(['POST'])
 def login(request):
