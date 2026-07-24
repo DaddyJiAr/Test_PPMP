@@ -1,7 +1,7 @@
 from datetime import datetime
 import json
+import math
 import pandas as pd
-import numpy as np
 
 from django.http import HttpResponse
 from postgrest import APIError
@@ -144,17 +144,17 @@ def insert_filtered_aggregate_data(data):
          "YearlyStaleScore": r["YearlyStaleScore"],
          "FinalScore": r["FinalScore"],
          "PriceDifference": r["PriceDifference"],
-         "InLieuDate": r["InLieuDate"]} for idx, r in data
+         "InLieuDate": r["InLieuDate"]} for _, r in data
         ]).execute()
     return response is not None
     
-def filter_dataframe(df, totalPrice):
-    def parseInLieuDate(date):
+def score_aggregate_data(df, total_price):
+    def parse_inlieu_date(date):
         return dateparser.parse(date)
     
-    nowDate = datetime.now()
-    minDate = parseInLieuDate(df["InLieuDate"].min())
-    maxDate = parseInLieuDate(df["InLieuDate"].max())
+    now_date = datetime.now()
+    min_date = parse_inlieu_date(df["InLieuDate"].min())
+    max_date = parse_inlieu_date(df["InLieuDate"].max())
     
     weights = {
         "frequency": .3,
@@ -163,19 +163,33 @@ def filter_dataframe(df, totalPrice):
         "yearly_staleness": .1
     }
     
-    df["PriceDifference"] = (df["PricePerUnit"] - totalPrice) / totalPrice
+    df["PriceDifference"] = (df["PricePerUnit"] * df["AvailableQuantity"] - total_price) / total_price
     df["PriceScore"] = (df["PriceDifference"] - df["PriceDifference"].min()) / (df["PriceDifference"].max() - df["PriceDifference"].min())
-    df["FrequentScore"] = df["Occurrence"].min() * df["QuantityReduced"].min() / df["Occurrence"].max() * df["QuantityReduced"].max()
-    df["StaleScore"] = min((nowDate.year - minDate.year) / maxDate.year, 1)
+    df["FrequentScore"] = (df["Occurrence"].min() * df["QuantityReduced"].min() / df["Occurrence"].max() * df["QuantityReduced"].max())
+    df["StaleScore"] = min((now_date.year - min_date.year) / max_date.year, 1)
 
     for _, row in df.iterrows():
-        row["YearlyStaleScore"] = min(((nowDate.timestamp() - minDate.timestamp() / maxDate.timestamp())) if parseInLieuDate(row["InLieuDate"]).year == nowDate.year else 0, 1)
-    
+        row["YearlyStaleScore"] = min(((now_date.timestamp() - min_date.timestamp() / max_date.timestamp())) if parse_inlieu_date(row["InLieuDate"]).year == now_date.year else 0, 1)
+        
     df["FinalScore"] = df["PriceScore"] * weights['price'] + df["FrequentScore"] * weights["frequency"] + df["StaleScore"] * weights['staleness'] + df["YearlyStaleScore"] * weights['yearly_staleness']
     df["Efficiency"] = df["FinalScore"] / df["PricePerUnit"].median()
     
-    df.sort_values("Efficiency", ascending=False, inplace=True)
-    return df
+    new_df = df.sort_values("Efficiency", ascending=False, inplace=False)
+    
+    return new_df
+
+def select_minimum_items(df, total_price):
+    df = df.copy()
+    df["StockValue"] = df["PricePerUnit"] * df["AvailableQuantity"]
+    df["CumStockValue"] = df["StockValue"].cumsum()
+
+    if df["StockValue"].sum() < total_price:
+        return None
+
+    cutoff_idx = df[df["CumStockValue"] >= total_price].index[0]
+    
+    print(df.loc[:cutoff_idx])
+    return df.loc[:cutoff_idx]
 
 @api_view(['POST'])
 def get_inlieu_suggestions(request):
@@ -183,50 +197,69 @@ def get_inlieu_suggestions(request):
     if user is None:
         return Response({"error": "User not found"}, status=401)
 
-    totalPrice = float(request.POST["Sum"])
-    fiscalYear = request.POST["FiscalYear"]
+    total_price = float(request.POST["Sum"])
+    fiscal_year = request.POST["FiscalYear"]
     
-    aggregateData = get_aggregate_data(fiscalYear)
-    df = pd.DataFrame(aggregateData)
+    aggregate_data = get_aggregate_data(fiscal_year)
+    
+    df = pd.DataFrame(aggregate_data)
+    df.drop_duplicates("ItemID", inplace=True)
+    
+    df = select_minimum_items(score_aggregate_data(df, total_price), total_price)
+    if df is None:
+        return Response(
+            {"error": "Requested in lieu budget exceeds the total value of in lieu items"},
+            status=400
+        )
+    
+    filtered_aggregate_data = [{
+        "itemId": row["ItemID"],
+        "itemName": row["ItemName"],
+        "unitMeasurement": row["UnitName"],
+        "plannedQuantity": row["PlannedQuantity"],
+        "availableQuantity": row["AvailableQuantity"],
+        "pendingQuantity": row["PendingQuantity"],
+        "fulfilledQuantity": row["FulfilledQuantity"],
+        "priceCatalog": row["PricePerUnit"], 
+        "reduceAmount": 0} for _, row in df.iterrows()]
+    result = []
 
-    currentPrice = 0
-    filteredItems = []
-    
-    def isDuplicateRow(itemId):
-        for filteredRow in filteredItems:
-            if filteredRow["itemId"] == itemId:
-                filteredRow["reduceAmount"] = filteredRow["reduceAmount"] + 1
-                return True
-        return False
-    
-    filtered_aggregate_data = filter_dataframe(df, totalPrice).iterrows();
-    
     #insert_filtered_aggregate_data(filtered_aggregate_data)
     
-    for _, row in filtered_aggregate_data:
-        if currentPrice >= totalPrice + totalPrice * .03:
+    remaining_budget = total_price
+    sv = lambda row: row["priceCatalog"] * row["availableQuantity"]
+
+    while filtered_aggregate_data:
+        cap =  remaining_budget / len(filtered_aggregate_data)
+        
+        print(f"The current cap is {cap}")
+        max_out = [x for x in filtered_aggregate_data if sv(x) <= cap]
+    
+        if not max_out:
+            print("\nSomething's maxed out\n")
+            for row in filtered_aggregate_data:
+                row["reduceAmount"] = math.ceil(cap / row["priceCatalog"])
+                
+                print(f"Set {row["itemName"]}'s reduction to {row["reduceAmount"]}")
+                result.extend(filtered_aggregate_data)
             break
         
-        currentPrice += row["PricePerUnit"]
-        if not isDuplicateRow(row["ItemID"]):
-            filteredItems.append({
-            "itemId": row["ItemID"],
-            "itemName": row["ItemName"],
-            "unitMeasurement": row["UnitName"],
-            "plannedQuantity": row["PlannedQuantity"],
-            "availableQuantity": row["AvailableQuantity"],
-            "pendingQuantity": row["PendingQuantity"],
-            "fulfilledQuantity": row["FulfilledQuantity"],
-            "priceCatalog": row["PricePerUnit"], 
-            "reduceAmount": 1
-        })
-    
-    # Issues:
-    # 1. Front-end (optimizing again resets the in lieu items)
-    # 2. Better suggestions
-    # 3. Inconsistent in lieu pool from the supabase aggregation function (need fix!)
-    
-    return Response(data={"data": filteredItems}, status=200)
+        print("\nNo item has been maxed out\n")
+        for row in max_out:
+            row["reduceAmount"] = row["availableQuantity"]
+            remaining_budget -= sv(row)
+            print(f"Set {row["itemName"]}'s reduction to {row["reduceAmount"]}")
+            
+            print(f"The remaining budget is now {remaining_budget}")
+            
+        result.extend(max_out)
+
+        max_out_ids = {x["itemId"] for x in max_out}
+        filtered_aggregate_data = [x for x in filtered_aggregate_data if x["itemId"] not in max_out_ids]
+        
+        print(f"Data list has been reduced to {len(filtered_aggregate_data)}")
+  
+    return Response(data={"data": result}, status=200)
 
 @api_view(['POST'])
 def get_ppmp_preview(request):
