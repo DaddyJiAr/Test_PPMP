@@ -1,12 +1,14 @@
 from datetime import datetime
 import json
 import pandas as pd
+import numpy as np
 
 from django.http import HttpResponse
 from postgrest import APIError
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from datetime import datetime
+from dateutil import parser as dateparser
 
 from .utils import private_supabase, get_user, check_fields
 from excel import testingPPMP, upload_excel
@@ -117,6 +119,64 @@ def update_pr_status(status, item_id, quantity):
         }).eq("ItemID", item_id).execute()
     return response is not None
 
+def get_aggregate_data(fiscal_year):
+    return private_supabase.rpc("get_aggregate_for_inlieu", {"fiscal_year": fiscal_year}).execute().data
+
+def insert_filtered_aggregate_data(data):
+    response = private_supabase.table("AGGREGATE_PPMP_ITEM").insert([
+        {"ItemID": r["ItemID"],
+         "created_at": r["created_at"],
+         "ItemName":r["ItemName"],
+         "UnitName":r["UnitName"],
+         "PricePerUnit": r["PricePerUnit"],
+         "PlannedQuantity": r["PlannedQuantity"],
+         "AvailableQuantity": r["AvailableQuantity"],
+         "PendingQuantity": r["PendingQuantity"],
+         "FulfilledQuantity": r["FulfilledQuantity"],
+         "FiscalYearID": r["FiscalYearID"],
+         "ItemCategory": r["ItemCategory"],
+         "PpmpCategory": r["PpmpCategory"],
+         "Occurrence": r["Occurrence"],
+         "QuantityReduced": r["QuantityReduced"],
+         "PriceScore": r["PriceScore"],
+         "FrequentScore": r["FrequentScore"],
+         "StaleScore": r["StaleScore"],
+         "YearlyStaleScore": r["YearlyStaleScore"],
+         "FinalScore": r["FinalScore"],
+         "PriceDifference": r["PriceDifference"],
+         "InLieuDate": r["InLieuDate"]} for idx, r in data
+        ]).execute()
+    return response is not None
+    
+def filter_dataframe(df, totalPrice):
+    def parseInLieuDate(date):
+        return dateparser.parse(date)
+    
+    nowDate = datetime.now()
+    minDate = parseInLieuDate(df["InLieuDate"].min())
+    maxDate = parseInLieuDate(df["InLieuDate"].max())
+    
+    weights = {
+        "frequency": .3,
+        "price": .4,
+        "staleness": .2,
+        "yearly_staleness": .1
+    }
+    
+    df["PriceDifference"] = (df["PricePerUnit"] - totalPrice) / totalPrice
+    df["PriceScore"] = (df["PriceDifference"] - df["PriceDifference"].min()) / (df["PriceDifference"].max() - df["PriceDifference"].min())
+    df["FrequentScore"] = df["Occurrence"].min() * df["QuantityReduced"].min() / df["Occurrence"].max() * df["QuantityReduced"].max()
+    df["StaleScore"] = min((nowDate.year - minDate.year) / maxDate.year, 1)
+
+    for _, row in df.iterrows():
+        row["YearlyStaleScore"] = min(((nowDate.timestamp() - minDate.timestamp() / maxDate.timestamp())) if parseInLieuDate(row["InLieuDate"]).year == nowDate.year else 0, 1)
+    
+    df["FinalScore"] = df["PriceScore"] * weights['price'] + df["FrequentScore"] * weights["frequency"] + df["StaleScore"] * weights['staleness'] + df["YearlyStaleScore"] * weights['yearly_staleness']
+    df["Efficiency"] = df["FinalScore"] / df["PricePerUnit"].median()
+    
+    df.sort_values("Efficiency", ascending=False, inplace=True)
+    return df
+
 @api_view(['POST'])
 def get_inlieu_suggestions(request):
     user = get_user(request)
@@ -124,29 +184,32 @@ def get_inlieu_suggestions(request):
         return Response({"error": "User not found"}, status=401)
 
     totalPrice = float(request.POST["Sum"])
-
-    aggregate = private_supabase.rpc("get_aggregate_for_inlieu").execute()
-    aggregateData = aggregate.data
-
+    fiscalYear = request.POST["FiscalYear"]
+    
+    aggregateData = get_aggregate_data(fiscalYear)
     df = pd.DataFrame(aggregateData)
-    
-    df["PriceDifference"] = (df["PricePerUnit"] - totalPrice) / totalPrice
-    df["PriceScore"] = (df["PriceDifference"] - df["PriceDifference"].min()) / (df["PriceDifference"].max() - df["PriceDifference"].min())
-    df["FrequentScore"] = df["Occurrence"].min() * df["QuantityReduced"].min() / df["Occurrence"].max() * df["QuantityReduced"].max()
-    df["StaleScore"] = min((datetime.now().year - df["InLieuYear"].min()) / df["InLieuYear"].max(), 1)
-    df["FinalScore"] = df["FrequentScore"] * .4 + df["PriceScore"] * .3 + df["StaleScore"] * .3
-    df["Efficiency"] = df["FinalScore"] / df["PricePerUnit"].replace(0, df["PricePerUnit"].median())
-    
-    df = df.sort_values("Efficiency", ascending=False)
 
-    total = 0
-    selected = []
-    cleaned = []
-    for _, row in df.iterrows():
-        if total >= totalPrice:
+    currentPrice = 0
+    filteredItems = []
+    
+    def isDuplicateRow(itemId):
+        for filteredRow in filteredItems:
+            if filteredRow["itemId"] == itemId:
+                filteredRow["reduceAmount"] = filteredRow["reduceAmount"] + 1
+                return True
+        return False
+    
+    filtered_aggregate_data = filter_dataframe(df, totalPrice).iterrows();
+    
+    #insert_filtered_aggregate_data(filtered_aggregate_data)
+    
+    for _, row in filtered_aggregate_data:
+        if currentPrice >= totalPrice + totalPrice * .03:
             break
         
-        row = {
+        currentPrice += row["PricePerUnit"]
+        if not isDuplicateRow(row["ItemID"]):
+            filteredItems.append({
             "itemId": row["ItemID"],
             "itemName": row["ItemName"],
             "unitMeasurement": row["UnitName"],
@@ -155,27 +218,15 @@ def get_inlieu_suggestions(request):
             "pendingQuantity": row["PendingQuantity"],
             "fulfilledQuantity": row["FulfilledQuantity"],
             "priceCatalog": row["PricePerUnit"], 
-            "reduceAmount":  1  
-        }
-        
-        dupe = False
-        
-        for cleanedRow in cleaned:
-            if row["itemId"] == cleanedRow["itemId"]:
-                cleanedRow["reduceAmount"] = cleanedRow["reduceAmount"] + 1
-                dupe = True
-                break
+            "reduceAmount": 1
+        })
     
-        selected.append(row)
-        
-        if not dupe:
-            cleaned.append(row)
-            
-        total += row["priceCatalog"]
-
-    df = None
-
-    return Response(data={"data": cleaned, "data_raw": selected}, status=200)
+    # Issues:
+    # 1. Front-end (optimizing again resets the in lieu items)
+    # 2. Better suggestions
+    # 3. Inconsistent in lieu pool from the supabase aggregation function (need fix!)
+    
+    return Response(data={"data": filteredItems}, status=200)
 
 @api_view(['POST'])
 def get_ppmp_preview(request):
