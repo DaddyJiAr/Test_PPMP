@@ -5,14 +5,10 @@ import pandas as pd
 from api.utils import private_supabase
 
 
-def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year):
+def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year, ppmp_category="Office Supply"):
     fiscal_year_str = year
-    fiscal_year = (
-        private_supabase.table("FISCAL_YEAR")
-        .select("*")
-        .eq("Year", fiscal_year_str)
-        .execute()
-    )
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", fiscal_year_str).execute()
+
 
     df = pd.read_excel(excel_file, header=None, skiprows=row_start - 1)
 
@@ -83,30 +79,30 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
     else:
         return df, total_amount, False
 
-def upload_excel(df, total_ABC, year):
-    current_year = datetime.now().year
-    fiscal_year = (
-        private_supabase.table("FISCAL_YEAR")
-        .select("*")
-        .eq("Year", year)
-        .execute()
-    )
-    fiscal_year_id = ''
-    if fiscal_year.data:
+def upload_excel(df, total_ABC, year, ppmp_category="Office Supply"):
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).execute()
+    fiscal_year_id = 0
+    if fiscal_year.data and ppmp_category == "Office Supply":
         fiscal_year_id = fiscal_year.data[0]["FiscalYearID"]
         private_supabase.table("FISCAL_YEAR").delete().eq("FiscalYearID", fiscal_year_id).execute() #cascade delete
 
-    response = (
-        private_supabase.table("FISCAL_YEAR")
-        .insert({
-            "Year": year,
-            "TotalABC": total_ABC,
-            "Status": "ongoing"
-        })
-        .execute()
-    )
-    fiscal_year_id = response.data[0]["FiscalYearID"]
-
+        response = private_supabase.table("FISCAL_YEAR").insert({
+                "Year": year,
+                "TotalABC": total_ABC,
+                "Status": "ongoing"
+            }).execute()
+        fiscal_year_id = response.data[0]["FiscalYearID"]
+    else:
+        response = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).maybe_single().execute()
+        if response is None:
+            response = private_supabase.table("FISCAL_YEAR").insert({
+                "Year": year,
+                "TotalABC": total_ABC,
+                "Status": "ongoing"
+            }).execute()
+            fiscal_year_id = response.data[0]["FiscalYearID"]
+        else:
+            fiscal_year_id = response.data["FiscalYearID"]
     records = []
 
     for _, row in df.iterrows():
@@ -119,6 +115,7 @@ def upload_excel(df, total_ABC, year):
             "PendingQuantity": 0,
             "FulfilledQuantity": 0,
             "FiscalYearID": fiscal_year_id,
+            "PpmpCategory": ppmp_category,
         })
     try:
         private_supabase.table("PPMP_ITEM").insert(records).execute()

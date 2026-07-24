@@ -265,41 +265,64 @@ def get_ppmp_preview(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
+    required_fields = ["isDualMode", "file", "totalABC", "startRow", "itemName", "year", "unit", "quantity", "unitPrice"]
+    missing_fields = check_fields(required_fields, request)
+    try:
+        if missing_fields:
+            return Response({"error": "Missing fields", "missingFields": missing_fields}, status=400)
+    except Exception as e:
+        return Response({"error": "Invalid fields"}, status=400)
+    isDualMode = request.POST.get("isDualMode") == "true"
     excel_file = request.FILES["file"]
+    total_abc = request.POST.get("totalABC")
     row_start = int(request.POST["startRow"])
     name_column = int(request.POST["itemName"])
+    year = (request.POST["year"])
     unit_column = int(request.POST["unit"])
     quantity_column = int(request.POST["quantity"])
     price_per_unit_column = int(request.POST["unitPrice"])
-    total_abc = request.POST.get("totalABC")
-    year = request.POST.get("year")
+    excel_file2 = None
+    if isDualMode is True:
+        excel_file2 = request.FILES["file2"]
+        if excel_file2 is None:
+            return Response(
+                {"error": "Second PPMP file is required in dual mode"},
+                status=400
+            )
+
+    df = [None, None]
+    grand_total_amount = 0
+    exists = False
     try:
-        df, grand_total_amount, exists = testingPPMP(
-            excel_file,
-            row_start,
-            name_column,
-            unit_column,
-            quantity_column,
-            price_per_unit_column,
-            year,
-        )
+        if isDualMode:
+            df[0], grand_total_amount1, exists1 = testingPPMP(excel_file, row_start, name_column, unit_column,
+                                                              quantity_column, price_per_unit_column, year,
+                                                              "Office Supply")
+            df[1], grand_total_amount2, exists2 = testingPPMP(excel_file2, row_start, name_column, unit_column,
+                                                              quantity_column, price_per_unit_column, year,
+                                                              "Laboratory Supply/Equipment")
+            grand_total_amount = grand_total_amount1 + grand_total_amount2
+            exists = exists1
+        else:
+            df[0], grand_total_amount, exists = testingPPMP(excel_file, row_start, name_column, unit_column,
+                                                         quantity_column, price_per_unit_column, year, "Office Supply")
     except ValueError as e:
-        return Response(
-            {"errors": e.args[0]},
-            status=400,
-        )
-    print(grand_total_amount)
+        return Response({"error": e.args[0]}, status=400, )
     if float(total_abc) < grand_total_amount:
-        return Response(
-            {
-                "errors": {
-                    "message": "Total ABC is less than grand total"
-                }
-            },
-            status=400,
-        )
-    # e = upload_excel(df)
-    return Response({"data": df.head().to_dict(orient="records"), 'name': name_column, 'unit': unit_column, 'quantity': quantity_column, 'price': price_per_unit_column, 'exists': exists})
+        return Response({"error": "Total ABC is less than grand total"}, status=400, )
+    # e = upload_excel(df[0], grand_total_amount, year, "Office Supply")
+    # if isDualMode:
+    #     e = upload_excel(df[1], grand_total_amount, year, "Laboratory Supply/Equipment")
+    if isDualMode:
+        return Response({
+            "data": df[0].head().to_dict(orient="records"),
+            "data2": df[1].head().to_dict(orient="records"),
+            "exists": exists
+        })
+    else:
+        return Response({
+            "data": df.head().to_dict(orient="records")
+        })
 
 
 @api_view(['POST'])
@@ -307,26 +330,50 @@ def upload(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
+    required_fields = ["isDualMode", "file", "totalABC", "startRow", "itemName", "year", "unit", "quantity", "unitPrice"]
+    missing_fields = check_fields(required_fields, request)
+    try:
+        if missing_fields:
+            return Response({"error": "Missing fields", "missingFields": missing_fields}, status=400)
+    except Exception as e:
+        return Response({"error": "Invalid fields"}, status=400)
+    isDualMode = request.POST.get("isDualMode") == "true"
     excel_file = request.FILES["file"]
     total_abc = request.POST.get("totalABC")
-    if total_abc is None:
-        return Response(
-            {"error": "Missing required field: totalABC"},
-            status=400
-        )
-    total_ABC = float(total_abc)
     row_start = int(request.POST["startRow"])
     name_column = int(request.POST["itemName"])
     year = (request.POST["year"])
     unit_column = int(request.POST["unit"])
     quantity_column = int(request.POST["quantity"])
     price_per_unit_column = int(request.POST["unitPrice"])
-    df, grand_total_amount, exists = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year)
+    excel_file2 = None
+    if isDualMode:
+        excel_file2 = request.FILES["file2"]
+        if excel_file2 is None:
+            return Response(
+                {"error": "Second PPMP file is required in dual mode"},
+                status=400
+            )
+    df = [None, None]
+    grand_total_amount = 0
+    exists = False
+    try:
+        if isDualMode:
+            df[0], grand_total_amount1, exists1 = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year, "Office Supply")
+            df[1], grand_total_amount2, exists2 = testingPPMP(excel_file2, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year, "Laboratory Supply/Equipment")
+            grand_total_amount = grand_total_amount1 + grand_total_amount2
+            exists = exists1
+        else:
+            df[0], grand_total_amount, exists = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year, "Office Supply")
+    except ValueError as e:
+        return Response({"error": e.args[0]}, status=400, )
     if float(total_abc) < grand_total_amount:
-        return Response({"error": "Total ABC is less than grand total"},)
-    e = upload_excel(df, total_ABC, year)
-    create_procurement_log("PPMP", "upload", year, user["FullName"])
-    return Response({"status": True, 'err': e})
+        return Response({"error": "Total ABC is less than grand total"}, status=400, )
+    e = upload_excel(df[0], grand_total_amount, year, "Office Supply")
+    if isDualMode:
+        e = upload_excel(df[1], grand_total_amount, year, "Laboratory Supply/Equipment")
+    create_procurement_log("PPMP", "upload", year, user["FullName"], "")
+    return Response({"status": "success", 'err': e})
 
 @api_view(['POST'])
 def export(request):
