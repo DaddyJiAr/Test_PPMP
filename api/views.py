@@ -201,7 +201,7 @@ def get_inlieu_suggestions(request):
     
     filtered_aggregate_data = filter_dataframe(df, totalPrice).iterrows();
     
-    insert_filtered_aggregate_data(filtered_aggregate_data)
+    #insert_filtered_aggregate_data(filtered_aggregate_data)
     
     for _, row in filtered_aggregate_data:
         if currentPrice >= totalPrice + totalPrice * .03:
