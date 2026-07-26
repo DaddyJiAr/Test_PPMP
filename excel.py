@@ -1,7 +1,9 @@
-from datetime import datetime
+from time import time
 
+from django.http.response import HttpResponse
+from openpyxl import Workbook
+from openpyxl.styles import Font, Border, Side, Alignment
 import pandas as pd
-
 from api.utils import private_supabase
 
 
@@ -26,28 +28,47 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
             "message": f"Column(s) {missing} do not exist or are completely empty.",
         })
 
-    df = df.dropna( #filters out empty rows
-        subset=[
-            name_column,
-            unit_column,
-            quantity_column,
-            price_per_unit_column
-        ]
-    )
+    current_category = None
+    processed_rows = []
 
-    df = df.iloc[:, [ #only includes necessary columns
-        name_column,
-        unit_column,
-        quantity_column,
-        price_per_unit_column
-    ]]
+    for _, row in df.iterrows():
+        description = row[name_column]
+        unit = row[unit_column]
+        quantity = row[quantity_column]
+        price = row[price_per_unit_column]
+        # print(row[name_column-1], description, unit, quantity, price)
 
-    df.columns = [ #rename
-        "Description",
-        "Unit",
-        "Quantity",
-        "CatalogPrice"
-    ]
+        if(
+            pd.notna(row[name_column-1])
+            and pd.isna(unit)
+            and pd.isna(quantity)
+            and pd.isna(price)
+        ): # check if category
+            current_category = row[name_column-1]
+            continue
+        elif(
+            pd.notna(row[name_column])
+            and pd.isna(unit)
+            and pd.isna(quantity)
+            and pd.isna(price)
+        ):
+            current_category = row[name_column]
+            continue
+        if (
+            pd.notna(description)
+            and pd.notna(unit)
+            and pd.notna(quantity)
+            and pd.notna(price)
+        ): # legit
+            processed_rows.append({
+                "Description": description,
+                "Unit": unit,
+                "Quantity": quantity,
+                "CatalogPrice": price,
+                "Category": current_category
+            })
+
+    df = pd.DataFrame(processed_rows)
 
     # check for incorrect data types (mga NaN)
     quantity = pd.to_numeric(df["Quantity"], errors="coerce")
@@ -115,9 +136,129 @@ def upload_excel(df, total_ABC, year, ppmp_category="Office Supply"):
             "PendingQuantity": 0,
             "FulfilledQuantity": 0,
             "FiscalYearID": fiscal_year_id,
+            "ItemCategory": row["Category"],
             "PpmpCategory": ppmp_category,
         })
     try:
         private_supabase.table("PPMP_ITEM").insert(records).execute()
     except TypeError as e:
         return e
+
+def export_formatted_excel(year):
+    wb = Workbook()
+    ws = wb.active
+    title = "CICT-PPMP-" + year
+    ws.title = title
+    default_font = Font(name="Arial", size=10)
+
+    current_row = 2
+    current_column = 1
+    ws.merge_cells(f"A{current_row}:R{current_row}")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    ws.column_dimensions[num_to_letter(current_column)].width = 20
+    current_row+=1
+    ws[f"A{current_row}"] = "END-USER/UNIT: CICT"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "center", "center"), "center", "center")
+    current_row += 1
+    ws[f"A{current_row}"] = "Source of Fund: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "center", "center"), "center", "center")
+
+    ws.merge_cells("A5:A7")
+    ws.merge_cells("B5:B7")
+    ws.merge_cells("C5:C7")
+    ws.merge_cells("D5:O5")
+    ws.merge_cells("P5:P7")
+    ws.merge_cells("Q5:Q7")
+    ws.merge_cells("R5:R7")
+
+    current_row = 5
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Seq."
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    set_border_padding_to_cell(ws, current_column, current_row, 5, 20, row_end=current_row+2)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "GENERAL DESCRIPTION"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    set_border_padding_to_cell(ws, current_column, current_row, 45, 20, row_end=current_row+2)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Unit of Measure"
+    set_border_padding_to_cell(ws, current_column, current_row, 19, 20, row_end=current_row+2)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Number of Units Needed"
+    set_border_padding_to_cell(ws, current_column, current_row, 19, 20, col_end=current_column+11)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column = 16
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL"
+    set_border_padding_to_cell(ws, current_column, current_row, 16, 20, row_end=current_row+2)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Price as per Catalogue"
+    set_border_padding_to_cell(ws, current_column, current_row, 17.5, 20, row_end=current_row+2)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL AMOUNT"
+    set_border_padding_to_cell(ws, current_column, current_row, 20, 20, row_end=current_row+2)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_row += 1
+    current_column = 4
+    months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+    column_width = 8
+    for i in range (0, len(months)):
+        if i == 8:
+            column_width = 13
+        if i < 8:
+            column_width = 9
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column)}{current_row+1}")
+        ws[f"{num_to_letter(current_column)}{current_row}"] = months[i]
+        set_border_padding_to_cell(ws, current_column, current_row, column_width, 20, row_end=current_row+1)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+        current_column += 1
+
+    # next
+    # fetch all ppmp items
+    # group by PPMP Category
+    # group by Item Category
+    # assign number, reset per category
+    # display subtotal per category
+    # sa subtotal price per cat = 0.00
+    # get signatories
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{title}.xlsx"'
+    wb.save(response)
+    return response
+
+
+
+def num_to_letter(num):
+    return chr(num + 64)
+
+def letter_to_num(letter):
+    return ord(letter.upper()) - 64
+
+
+def set_format_to_cell(ws, column, row, font, size, bold, italic, horizontal, vertical):
+    ws[f"{num_to_letter(column)}{row}"].font = Font(bold=bold, italic=italic, name=font, size=size)
+    ws[f"{num_to_letter(column)}{row}"].alignment = Alignment(horizontal=horizontal, vertical=vertical)
+
+def set_border_padding_to_cell(ws, col_start, row_start, column_width, row_height,
+                                col_end=None, row_end=None,
+                                left="thin", right="thin", top="thin", bottom="thin"):
+    col_end = col_end or col_start
+    row_end = row_end or row_start
+
+    ws.column_dimensions[num_to_letter(col_start)].width = column_width
+    ws.row_dimensions[row_start].height = row_height
+
+    for r in range(row_start, row_end + 1):
+        for c in range(col_start, col_end + 1):
+            border = Border(
+                left=Side(style=left) if c == col_start else Side(style="thin"),
+                right=Side(style=right) if c == col_end else Side(style="thin"),
+                top=Side(style=top) if r == row_start else Side(style="thin"),
+                bottom=Side(style=bottom) if r == row_end else Side(style="thin"),
+            )
+            ws.cell(row=r, column=c).border = border
