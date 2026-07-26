@@ -154,14 +154,15 @@ def export_formatted_excel(year):
     current_row = 2
     current_column = 1
     ws.merge_cells(f"A{current_row}:R{current_row}")
+    ws[f"A{current_row}"] = "PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) " + year
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     ws.column_dimensions[num_to_letter(current_column)].width = 20
     current_row+=1
     ws[f"A{current_row}"] = "END-USER/UNIT: CICT"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "center", "center"), "center", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "left", "center")
     current_row += 1
     ws[f"A{current_row}"] = "Source of Fund: "
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "center", "center"), "center", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "left", "center")
 
     ws.merge_cells("A5:A7")
     ws.merge_cells("B5:B7")
@@ -194,7 +195,7 @@ def export_formatted_excel(year):
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Price as per Catalogue"
-    set_border_padding_to_cell(ws, current_column, current_row, 17.5, 20, row_end=current_row+2)
+    set_border_padding_to_cell(ws, current_column, current_row, 18, 20, row_end=current_row+2)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL AMOUNT"
