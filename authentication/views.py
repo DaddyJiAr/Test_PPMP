@@ -82,7 +82,7 @@ def forgot_password(request):
     try:
         missing_fields = check_fields(["email"], request)
         if missing_fields:
-            return Response({"error": "Required fields missing"}, status=400)
+            return Response({"error": "Required fields missing", "missingFields": missing_fields}, status=400)
     except Exception as e:
         return Response({"error": "Invalid fields"}, status=400)
     email = request.POST["email"]

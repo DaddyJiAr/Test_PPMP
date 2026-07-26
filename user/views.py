@@ -152,3 +152,24 @@ def promote_user(request):
             return Response({"error": "Error updating user"}, status=500)
         else:
             return Response({"status": "success"}, status=200)
+
+@api_view(['DELETE'])
+def delete_user(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+    if check_admin(request):
+        return Response({"error": "Unauthorized access"}, status=401)
+    else:
+        try:
+            missing_fields = check_fields(["userId"], request)
+            if missing_fields:
+                return Response({"error": "Required fields missing", "missingFields": missing_fields}, status=400)
+        except Exception as e:
+            return Response({"error": "Invalid fields"}, status=400)
+        user_id = request.data.get("userId")
+        try:
+            response = private_supabase.table("USER").delete().eq("UserID", user_id).execute()
+        except Exception as e:
+            return Response({"error": "Error deleting user", "message": str(e)}, status=500)
+        return Response({"status": "success"}, status=200)
