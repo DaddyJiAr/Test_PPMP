@@ -1,5 +1,6 @@
 import json
 import math
+import time
 import pandas as pd
 
 from django.http import HttpResponse
@@ -27,8 +28,14 @@ def get_ppmp_items(year):
 def get_available_lieu_pool_funds(ppmp_items):
     available_lieu_pool_funds = 0
     for ppmp_item in ppmp_items.data:
-        available_lieu_pool_funds += ppmp_item["PlannedQuantity"] * ppmp_item["PricePerUnit"]
+        available_lieu_pool_funds += ppmp_item["AvailableQuantity"] * ppmp_item["PricePerUnit"]
     return available_lieu_pool_funds
+
+def get_open_funds(ppmp_items):
+    open_funds = 0
+    for ppmp_item in ppmp_items.data:
+        open_funds += ppmp_item["PlannedQuantity"] * ppmp_item["PricePerUnit"]
+    return open_funds
 
 def get_year_str(fiscal_year_id):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("Year").eq("FiscalYearID", fiscal_year_id).single().execute()
@@ -321,7 +328,7 @@ def get_ppmp_preview(request):
         })
     else:
         return Response({
-            "data": df.head().to_dict(orient="records")
+            "data": df[0].head().to_dict(orient="records")
         })
 
 
@@ -371,7 +378,7 @@ def upload(request):
         return Response({"error": "Total ABC is less than grand total"}, status=400, )
     e = upload_excel(df[0], grand_total_amount, year, "Office Supply")
     if isDualMode:
-        e = upload_excel(df[1], grand_total_amount, year, "Laboratory Supply/Equipment")
+        e = upload_excel(df[1], total_abc, year, "Laboratory Supply/Equipment")
     create_procurement_log("PPMP", "upload", year, user["FullName"], "")
     return Response({"status": "success", 'err': e})
 
@@ -431,49 +438,54 @@ def dashboard_cards(request):
     except Exception as e:
         return Response({"error": "Invalid fields"}, status=400)
     year = request.POST["year"]
-    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("TotalABC", "FiscalYearID").eq("Year", year).single().execute()
     total_annual_budget = fiscal_year.data["TotalABC"]
-    ppmp_items = get_ppmp_items(year)
+    ppmp_items = private_supabase.table("PPMP_ITEM").select("ItemID, PlannedQuantity, PendingQuantity, FulfilledQuantity, AvailableQuantity, PricePerUnit").eq('FiscalYearID', fiscal_year.data["FiscalYearID"]).execute()
     item_ids = list({
         item["ItemID"]
         for item in ppmp_items.data
         if item["ItemID"] is not None
     })
-    in_lieus = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).execute()
-    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("ItemID", item_ids).execute()
-    committed_funds = 0
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("ItemID, RequestQuantity, Status").in_("ItemID", item_ids).execute()
+    # retry
+    # for attempt in range(3):
+    #     purchase_requests = (
+    #         private_supabase
+    #         .table("PURCHASE_REQUEST")
+    #         .select("ItemID, RequestQuantity, Status")
+    #         .in_("ItemID", item_ids)
+    #         .execute()
+    #     )
+    #
+    #     if purchase_requests.data:
+    #         break
+    #
+    #     time.sleep(0.2)
     requested_funds = 0
-    arrived_funds = 0 # lapa
-    pending_in_lieu_count = 0 #lapa
-    ppmp_item_ids = list({
-        pr["ItemID"]
-        for pr in purchase_requests.data
-    })
-
-    ppmp_items_response = private_supabase.table("PPMP_ITEM").select("ItemID, PricePerUnit").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).in_("ItemID", ppmp_item_ids).execute()
+    arrived_funds = 0
+    pending_pr = 0
 
     ppmp_item_map = {
         item["ItemID"]: item
-        for item in ppmp_items_response.data
+        for item in ppmp_items.data
     }
-
     for purchase_request in purchase_requests.data:
         purchase_request_item = ppmp_item_map.get(purchase_request["ItemID"])
         if not purchase_request_item:
             continue
-        amount = (purchase_request_item["PricePerUnit"] * purchase_request["RequestQuantity"])
-        if purchase_request["Status"] != "Cancelled":
-            committed_funds += amount
         if purchase_request["Status"] == "Pending":
-            requested_funds += amount
-        if purchase_request["Status"] == "Fulfilled":
-            arrived_funds += amount
-    for in_lieu in in_lieus.data:
-        if in_lieu["Status"].lower() == "pending":
-            pending_in_lieu_count += 1
+            requested_funds += purchase_request_item["PricePerUnit"] * purchase_request["RequestQuantity"]
+
+    for ppmp_item in ppmp_items.data:
+        pending_pr += ppmp_item["PricePerUnit"] * ppmp_item["PendingQuantity"]
+        arrived_funds += ppmp_item["PricePerUnit"] * ppmp_item["FulfilledQuantity"]
+
+    committed_funds = pending_pr + arrived_funds
+
     available_lieu_pool_funds = get_available_lieu_pool_funds(ppmp_items)
-    open_funds = total_annual_budget - available_lieu_pool_funds
+    open_funds = get_open_funds(ppmp_items)
     logs = private_supabase.table("PROCUREMENT_LOG").select("*").execute()
+    time
     logs = [
         {
             "actionType": log["ActionType"].capitalize(),
@@ -491,7 +503,7 @@ def dashboard_cards(request):
                      "openFunds": open_funds,
                      "requestedFunds": requested_funds,
                      "arrivedFunds": arrived_funds,
-                     "pendingInLieuCount": pending_in_lieu_count,
+                     "pendingInLieuCount": pending_pr,
                      "logs": logs
                      })
 
