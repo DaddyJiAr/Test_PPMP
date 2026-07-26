@@ -11,7 +11,8 @@ from datetime import datetime
 from dateutil import parser as dateparser
 
 from .utils import private_supabase, get_user, check_fields
-from excel import testingPPMP, upload_excel
+from excel import testingPPMP, upload_excel, export_formatted_excel
+
 
 def get_item(item_id):
     response = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", item_id).single().execute()
@@ -328,7 +329,7 @@ def get_ppmp_preview(request):
         })
     else:
         return Response({
-            "data": df[0].head().to_dict(orient="records")
+            "data": df[0].to_dict(orient="records")
         })
 
 
@@ -384,6 +385,7 @@ def upload(request):
 
 @api_view(['POST'])
 def export(request):
+    return export_formatted_excel("2026")
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
