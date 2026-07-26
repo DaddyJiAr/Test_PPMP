@@ -76,3 +76,45 @@ def update_password(request):
     except AuthApiError:
         return Response({"error": "Invalid login credentials"}, status=401)
     return Response(user.email)
+
+@api_view(['POST'])
+def forgot_password(request):
+    try:
+        missing_fields = check_fields(["email"], request)
+        if missing_fields:
+            return Response({"error": "Required fields missing"}, status=400)
+    except Exception as e:
+        return Response({"error": "Invalid fields"}, status=400)
+    email = request.POST["email"]
+    try:
+        private_supabase.auth.reset_password_for_email(email, {"redirect_to": "http://localhost:5173/reset-password"})
+    except AuthApiError as e:
+        return Response({"error": str(e)}, status=500)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+    return Response({"status": "success"}, status=200)
+
+
+@api_view(['POST'])
+def reset_password(request):
+    try:
+        required_fields = ["accessToken", "refreshToken", "password"]
+        missing_fields = check_fields(required_fields, request)
+        if missing_fields:
+            return Response({"error": "Required fields missing", "missingFields": missing_fields}, status=400)
+    except Exception as e:
+        return Response({"error": "Invalid fields"}, status=400)
+    access_token = request.data["accessToken"]
+    refresh_token = request.data["refreshToken"]
+    password = request.data["password"]
+    try:
+        response = private_supabase.auth.set_session(access_token, refresh_token)
+        user = response.user
+        private_supabase.auth.update_user({"password": password})
+        private_supabase.auth.sign_in_with_password({"email": user.email, "password": password})
+    except AuthApiError as e:
+        return Response({"error": str(e)}, status=500)
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+    return Response({"status": "success"}, status=200)
+
