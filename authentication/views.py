@@ -95,7 +95,7 @@ def forgot_password(request):
     return Response({"status": "success"}, status=200)
 
 
-@api_view(['POST'])
+@api_view(['PUT'])
 def reset_password(request):
     try:
         required_fields = ["accessToken", "refreshToken", "password"]
