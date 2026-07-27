@@ -169,7 +169,8 @@ def delete_user(request):
             return Response({"error": "Invalid fields"}, status=400)
         user_id = request.data.get("userId")
         try:
-            auth_del = private_supabase.auth.admin.delete(user_id)
+            print(f"deleting user {user_id}")
+            auth_del = private_supabase.auth.admin.delete_user(user_id)
             response = private_supabase.table("USER").delete().eq("UserID", user_id).execute()
         except Exception as e:
             return Response({"error": "Error deleting user", "message": str(e)}, status=500)
