@@ -70,3 +70,7 @@ def check_fields(required_fields, request):
         return missing_fields
     else:
         return None
+
+def get_ppmp_items(year):
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
+    return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).execute()

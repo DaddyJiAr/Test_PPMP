@@ -10,7 +10,7 @@ from rest_framework.decorators import api_view
 from datetime import datetime
 from dateutil import parser as dateparser
 
-from .utils import private_supabase, get_user, check_fields
+from .utils import private_supabase, get_user, check_fields, get_ppmp_items
 from excel import testingPPMP, upload_excel, export_formatted_excel
 
 
@@ -21,10 +21,6 @@ def get_item(item_id):
 def get_item_detail(item_id, column_name):
     response = private_supabase.table("PPMP_ITEM").select(column_name).eq("ItemID", item_id).single().execute()
     return response.data[column_name]
-
-def get_ppmp_items(year):
-    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
-    return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).execute()
 
 def get_available_lieu_pool_funds(ppmp_items):
     available_lieu_pool_funds = 0

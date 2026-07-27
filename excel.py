@@ -5,6 +5,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Border, Side, Alignment
 import pandas as pd
 from api.utils import private_supabase
+from api.views import get_ppmp_items
 
 
 def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year, ppmp_category="Office Supply"):
@@ -44,7 +45,7 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
             and pd.isna(quantity)
             and pd.isna(price)
         ): # check if category
-            current_category = row[name_column-1]
+            current_category = str(row[name_column-1]).strip()
             continue
         elif(
             pd.notna(row[name_column])
@@ -52,7 +53,7 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
             and pd.isna(quantity)
             and pd.isna(price)
         ):
-            current_category = row[name_column]
+            current_category = str(row[name_column]).strip()
             continue
         if (
             pd.notna(description)
@@ -217,6 +218,18 @@ def export_formatted_excel(year):
         current_column += 1
 
     # next
+    ppmp_items = get_ppmp_items(year)
+
+    office_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Office Supply"]
+    lab_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Laboratory Supply/Equipment"]
+
+    office_categories = [ppmp_item["ItemCategory"] for ppmp_item in office_supplies]
+    office_categories = list(set(office_categories))
+    lab_categories = [ppmp_item["ItemCategory"] for ppmp_item in lab_supplies]
+    lab_categories = list(set(lab_categories))
+
+    print("Office Categories:", office_categories)
+    print("Lab Categories:", lab_categories)
     # fetch all ppmp items
     # group by PPMP Category
     # group by Item Category
