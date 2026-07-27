@@ -111,7 +111,6 @@ def reset_password(request):
         response = private_supabase.auth.set_session(access_token, refresh_token)
         user = response.user
         private_supabase.auth.update_user({"password": password})
-        private_supabase.auth.sign_in_with_password({"email": user.email, "password": password})
     except AuthApiError as e:
         return Response({"error": str(e)}, status=500)
     except Exception as e:
