@@ -57,7 +57,7 @@ def update_password(request):
         user = get_auth_user(request)
     except:
         return Response({"error": "User not found"}, status=401)
-    req = ["current_password", "new_password"]
+    req = ["currentPassword"]
     current_password = request.data['currentPassword']
     missing_fields = check_fields(req, request)
     if missing_fields:
