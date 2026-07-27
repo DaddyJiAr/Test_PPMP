@@ -6,7 +6,10 @@ from openpyxl.styles import Font, Border, Side, Alignment
 import pandas as pd
 from api.utils import private_supabase
 from api.views import get_ppmp_items
+from rest_framework.response import Response
 
+def is_empty_or_zero(value):
+    return pd.isna(value) or value == 0
 
 def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year, ppmp_category="Office Supply"):
     fiscal_year_str = year
@@ -38,22 +41,26 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
         quantity = row[quantity_column]
         price = row[price_per_unit_column]
         # print(row[name_column-1], description, unit, quantity, price)
-
+        name = str(row[name_column-1]).strip()
         if(
             pd.notna(row[name_column-1])
-            and pd.isna(unit)
-            and pd.isna(quantity)
-            and pd.isna(price)
+            and is_empty_or_zero(unit)
+            and is_empty_or_zero(unit)
+            and is_empty_or_zero(unit)
         ): # check if category
-            current_category = str(row[name_column-1]).strip()
+            if "subtotal" in name.lower() or "total" in name.lower():
+                continue
+            current_category = name
             continue
         elif(
             pd.notna(row[name_column])
-            and pd.isna(unit)
-            and pd.isna(quantity)
-            and pd.isna(price)
+            and is_empty_or_zero(unit)
+            and is_empty_or_zero(unit)
+            and is_empty_or_zero(unit)
         ):
-            current_category = str(row[name_column]).strip()
+            if "subtotal" in name.lower() or "total" in name.lower():
+                continue
+            current_category = name
             continue
         if (
             pd.notna(description)
@@ -224,12 +231,43 @@ def export_formatted_excel(year):
     lab_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Laboratory Supply/Equipment"]
 
     office_categories = [ppmp_item["ItemCategory"] for ppmp_item in office_supplies]
-    office_categories = list(set(office_categories))
+    office_categories = list(dict.fromkeys(office_categories))
     lab_categories = [ppmp_item["ItemCategory"] for ppmp_item in lab_supplies]
-    lab_categories = list(set(lab_categories))
+    lab_categories = list(dict.fromkeys(lab_categories))
+    office_supplies = {
+        office_category: [
+            {
+                "Seq.": counter,
+                "GENERAL DESCRIPTION": office_supply["ItemName"],
+                "Unit of Measure": office_supply["UnitName"],
+                "January": office_supply["PlannedQuantity"],
+                "TOTAL": office_supply["PlannedQuantity"],
+                "Price as per Catalogue": office_supply["PricePerUnit"],
+                "TOTAL AMOUNT": office_supply["PlannedQuantity"] * office_supply["PricePerUnit"]
+            }
+            for counter, office_supply in enumerate(office_supplies, start=1)
+        ]
+        for office_category in office_categories
+    }
 
-    print("Office Categories:", office_categories)
-    print("Lab Categories:", lab_categories)
+    lab_supplies = {
+        lab_category: [
+            {
+                "Seq.": counter,
+                "GENERAL DESCRIPTION": lab_supply["ItemName"],
+                "Unit of Measure": lab_supply["UnitName"],
+                "January": lab_supply["PlannedQuantity"],
+                "TOTAL": lab_supply["PlannedQuantity"],
+                "Price as per Catalogue": lab_supply["PricePerUnit"],
+                "TOTAL AMOUNT": lab_supply["PlannedQuantity"] * lab_supply["PricePerUnit"]
+            }
+            for counter, lab_supply in enumerate(lab_supplies, start=1)
+        ]
+        for lab_category in lab_categories
+    }
+    print("Office Categories:", office_supplies)
+    print("Lab Categories:", lab_supplies)
+    return Response({"Office": office_supplies, "Lab": lab_supplies})
     # fetch all ppmp items
     # group by PPMP Category
     # group by Item Category
