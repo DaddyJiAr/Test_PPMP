@@ -449,6 +449,7 @@ def dashboard_cards(request):
         if item["ItemID"] is not None
     })
     purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("ItemID, RequestQuantity, Status").in_("ItemID", item_ids).execute()
+    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq('FiscalYearID', fiscal_year.data["FiscalYearID"]).execute()
     # retry
     # for attempt in range(3):
     #     purchase_requests = (
@@ -466,7 +467,7 @@ def dashboard_cards(request):
     requested_funds = 0
     arrived_funds = 0
     pending_pr = 0
-
+    pending_in_lieu_count = 0
     ppmp_item_map = {
         item["ItemID"]: item
         for item in ppmp_items.data
@@ -477,6 +478,8 @@ def dashboard_cards(request):
             continue
         if purchase_request["Status"] == "Pending":
             requested_funds += purchase_request_item["PricePerUnit"] * purchase_request["RequestQuantity"]
+    for _ in in_lieus.data:
+        pending_in_lieu_count += 1
 
     for ppmp_item in ppmp_items.data:
         pending_pr += ppmp_item["PricePerUnit"] * ppmp_item["PendingQuantity"]
@@ -487,7 +490,6 @@ def dashboard_cards(request):
     available_lieu_pool_funds = get_available_lieu_pool_funds(ppmp_items)
     open_funds = get_open_funds(ppmp_items)
     logs = private_supabase.table("PROCUREMENT_LOG").select("*").execute()
-    time
     logs = [
         {
             "actionType": log["ActionType"].capitalize(),
@@ -505,7 +507,7 @@ def dashboard_cards(request):
                      "openFunds": open_funds,
                      "requestedFunds": requested_funds,
                      "arrivedFunds": arrived_funds,
-                     "pendingInLieuCount": pending_pr,
+                     "pendingInLieuCount": pending_in_lieu_count,
                      "logs": logs
                      })
 
