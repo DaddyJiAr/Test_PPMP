@@ -57,14 +57,13 @@ def update_password(request):
         user = get_auth_user(request)
     except:
         return Response({"error": "User not found"}, status=401)
-    req = ["currentPassword"]
-    current_password = request.data['currentPassword']
+    req = ["newPassword"]
     missing_fields = check_fields(req, request)
     if missing_fields:
         return Response({"error": "Required fields missing", "missingFields": missing_fields}, status=400)
     new_password = request.POST['newPassword']
     try:
-        response = private_supabase.auth.sign_in_with_password({'email': user.email, 'password': current_password})
+        response = private_supabase.auth.sign_in_with_password({'email': user.email, 'password': new_password})
         if response is not None:
             response = private_supabase.auth.update_user({
                 "password": new_password,
