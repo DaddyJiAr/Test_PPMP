@@ -319,8 +319,8 @@ def get_ppmp_preview(request):
     #     e = upload_excel(df[1], grand_total_amount, year, "Laboratory Supply/Equipment")
     if isDualMode:
         return Response({
-            "data": df[0].head().to_dict(orient="records"),
-            "data2": df[1].head().to_dict(orient="records"),
+            "data": df[0].to_dict(orient="records"),
+            "data2": df[1].to_dict(orient="records"),
             "exists": exists
         })
     else:

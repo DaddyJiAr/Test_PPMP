@@ -41,22 +41,33 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
         quantity = row[quantity_column]
         price = row[price_per_unit_column]
         # print(row[name_column-1], description, unit, quantity, price)
-        name = str(row[name_column-1]).strip()
+        left = row[name_column - 1]
+        right = row[name_column]
+
+        name = None
+
+        if pd.notna(left):
+            name = str(left).strip()
+        elif pd.notna(right):
+            name = str(right).strip()
+        else:
+            continue
+
         if(
-            pd.notna(row[name_column-1])
+            pd.notna(row[name_column])
             and is_empty_or_zero(unit)
-            and is_empty_or_zero(unit)
-            and is_empty_or_zero(unit)
+            and is_empty_or_zero(quantity)
+            and is_empty_or_zero(price)
         ): # check if category
             if "subtotal" in name.lower() or "total" in name.lower():
                 continue
             current_category = name
             continue
         elif(
-            pd.notna(row[name_column])
+            pd.notna(row[name_column-1])
             and is_empty_or_zero(unit)
-            and is_empty_or_zero(unit)
-            and is_empty_or_zero(unit)
+            and is_empty_or_zero(quantity)
+            and is_empty_or_zero(price)
         ):
             if "subtotal" in name.lower() or "total" in name.lower():
                 continue
@@ -68,11 +79,19 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
             and pd.notna(quantity)
             and pd.notna(price)
         ): # legit
+            print(
+                "APPEND:",
+                description,
+                unit,
+                quantity,
+                price,
+                current_category
+            )
             processed_rows.append({
                 "Description": description,
                 "Unit": unit,
                 "Quantity": quantity,
-                "CatalogPrice": price,
+                "CatalogPrice": f"{price:.2f}",
                 "Category": current_category
             })
 
@@ -184,30 +203,30 @@ def export_formatted_excel(year):
     current_column = 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Seq."
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-    set_border_padding_to_cell(ws, current_column, current_row, 5, 20, row_end=current_row+2)
+    set_border_padding_to_cell(ws, current_column, current_row, row_end=current_row+2)
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "GENERAL DESCRIPTION"
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-    set_border_padding_to_cell(ws, current_column, current_row, 45, 20, row_end=current_row+2)
+    set_border_padding_to_cell(ws, current_column, current_row, row_end=current_row+2)
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Unit of Measure"
-    set_border_padding_to_cell(ws, current_column, current_row, 19, 20, row_end=current_row+2)
+    set_border_padding_to_cell(ws, current_column, current_row, row_end=current_row+2)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Number of Units Needed"
-    set_border_padding_to_cell(ws, current_column, current_row, 19, 20, col_end=current_column+11)
+    set_border_padding_to_cell(ws, current_column, current_row, col_end=current_column+11)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column = 16
     ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL"
-    set_border_padding_to_cell(ws, current_column, current_row, 16, 20, row_end=current_row+2)
+    set_border_padding_to_cell(ws, current_column, current_row, row_end=current_row+2)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Price as per Catalogue"
-    set_border_padding_to_cell(ws, current_column, current_row, 18, 20, row_end=current_row+2)
+    set_border_padding_to_cell(ws, current_column, current_row, row_end=current_row+2)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL AMOUNT"
-    set_border_padding_to_cell(ws, current_column, current_row, 20, 20, row_end=current_row+2)
+    set_border_padding_to_cell(ws, current_column, current_row, row_end=current_row+2)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_row += 1
     current_column = 4
@@ -220,7 +239,7 @@ def export_formatted_excel(year):
             column_width = 9
         ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column)}{current_row+1}")
         ws[f"{num_to_letter(current_column)}{current_row}"] = months[i]
-        set_border_padding_to_cell(ws, current_column, current_row, column_width, 20, row_end=current_row+1)
+        set_border_padding_to_cell(ws, current_column, current_row, row_end=current_row+1)
         set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
         current_column += 1
 
@@ -234,47 +253,121 @@ def export_formatted_excel(year):
     office_categories = list(dict.fromkeys(office_categories))
     lab_categories = [ppmp_item["ItemCategory"] for ppmp_item in lab_supplies]
     lab_categories = list(dict.fromkeys(lab_categories))
-    office_supplies = {
-        office_category: [
-            {
-                "Seq.": counter,
-                "GENERAL DESCRIPTION": office_supply["ItemName"],
-                "Unit of Measure": office_supply["UnitName"],
-                "January": office_supply["PlannedQuantity"],
-                "TOTAL": office_supply["PlannedQuantity"],
-                "Price as per Catalogue": office_supply["PricePerUnit"],
-                "TOTAL AMOUNT": office_supply["PlannedQuantity"] * office_supply["PricePerUnit"]
-            }
-            for counter, office_supply in enumerate(office_supplies, start=1)
-        ]
-        for office_category in office_categories
-    }
+    office_supplies_dict = {}
 
-    lab_supplies = {
-        lab_category: [
-            {
-                "Seq.": counter,
-                "GENERAL DESCRIPTION": lab_supply["ItemName"],
-                "Unit of Measure": lab_supply["UnitName"],
-                "January": lab_supply["PlannedQuantity"],
-                "TOTAL": lab_supply["PlannedQuantity"],
-                "Price as per Catalogue": lab_supply["PricePerUnit"],
-                "TOTAL AMOUNT": lab_supply["PlannedQuantity"] * lab_supply["PricePerUnit"]
-            }
-            for counter, lab_supply in enumerate(lab_supplies, start=1)
+    for office_category in office_categories:
+        category_items = [
+            item
+            for item in office_supplies
+            if item["ItemCategory"] == office_category
         ]
-        for lab_category in lab_categories
-    }
+
+        office_supplies_dict[office_category] = [
+            {
+                "Seq.": i,
+                "GENERAL DESCRIPTION": item["ItemName"],
+                "Unit of Measure": item["UnitName"],
+                "January": item["PlannedQuantity"],
+                "TOTAL": item["PlannedQuantity"],
+                "Price as per Catalogue": item["PricePerUnit"],
+                "TOTAL AMOUNT": item["PlannedQuantity"] * item["PricePerUnit"],
+            }
+            for i, item in enumerate(category_items, start=1)
+        ]
+
+    office_supplies = office_supplies_dict
+
+    lab_supplies_dict = {}
+
+    for lab_category in lab_categories:
+        category_items = [
+            item
+            for item in lab_supplies
+            if item["ItemCategory"] == lab_category
+        ]
+
+        lab_supplies_dict[lab_category] = [
+            {
+                "Seq.": i,
+                "GENERAL DESCRIPTION": item["ItemName"],
+                "Unit of Measure": item["UnitName"],
+                "January": item["PlannedQuantity"],
+                "TOTAL": item["PlannedQuantity"],
+                "Price as per Catalogue": item["PricePerUnit"],
+                "TOTAL AMOUNT": item["PlannedQuantity"] * item["PricePerUnit"],
+            }
+            for i, item in enumerate(category_items, start=1)
+        ]
+
+    lab_supplies = lab_supplies_dict
+
     print("Office Categories:", office_supplies)
     print("Lab Categories:", lab_supplies)
-    return Response({"Office": office_supplies, "Lab": lab_supplies})
-    # fetch all ppmp items
-    # group by PPMP Category
-    # group by Item Category
-    # assign number, reset per category
+    # return Response({"Office": office_supplies, "Lab": lab_supplies})
     # display subtotal per category
     # sa subtotal price per cat = 0.00
     # get signatories
+
+    current_row += 2
+    current_column = 1
+    print("Current Row:", current_row)
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "OFFICE SUPPLIES"
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    set_border_padding_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None, col_end=current_column+1)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+
+    for office_category, items in office_supplies.items():
+        current_row += 1
+        current_column = 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = office_category
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+        set_border_padding_to_cell(ws, current_column, current_row, col_end=current_column + 1)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+
+        for ppmp_item in items:
+            current_row += 1
+            current_column = 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["Seq."]
+            set_border_padding_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+            current_column += 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["GENERAL DESCRIPTION"]
+            set_border_padding_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+
+            current_column += 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["Unit of Measure"]
+            set_border_padding_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+            current_column += 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["January"]
+            set_border_padding_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+            current_column += 1
+            for i in range(11):
+                ws[f"{num_to_letter(current_column)}{current_row}"] = ""
+                set_border_padding_to_cell(ws, current_column, current_row)
+                set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+                current_column += 1
+
+            ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["TOTAL"]
+            set_border_padding_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+            current_column += 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["Price as per Catalogue"]
+            set_border_padding_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+            current_column += 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["TOTAL AMOUNT"]
+            set_border_padding_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
 
     response = HttpResponse(
         content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -296,14 +389,11 @@ def set_format_to_cell(ws, column, row, font, size, bold, italic, horizontal, ve
     ws[f"{num_to_letter(column)}{row}"].font = Font(bold=bold, italic=italic, name=font, size=size)
     ws[f"{num_to_letter(column)}{row}"].alignment = Alignment(horizontal=horizontal, vertical=vertical)
 
-def set_border_padding_to_cell(ws, col_start, row_start, column_width, row_height,
+def set_border_padding_to_cell(ws, col_start, row_start,
                                 col_end=None, row_end=None,
                                 left="thin", right="thin", top="thin", bottom="thin"):
     col_end = col_end or col_start
     row_end = row_end or row_start
-
-    ws.column_dimensions[num_to_letter(col_start)].width = column_width
-    ws.row_dimensions[row_start].height = row_height
 
     for r in range(row_start, row_end + 1):
         for c in range(col_start, col_end + 1):
