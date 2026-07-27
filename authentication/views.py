@@ -4,7 +4,8 @@ from rest_framework.decorators import api_view
 from supabase_auth.errors import AuthApiError
 
 from api.utils import private_supabase, get_user, get_token, get_role_token, public_supabase, get_auth_user, \
-    check_fields
+    check_fields, create_supabase
+
 
 @api_view(['GET'])
 def get_users(request):
@@ -107,9 +108,10 @@ def reset_password(request):
     refresh_token = request.data["refreshToken"]
     password = request.data["password"]
     try:
-        response = private_supabase.auth.set_session(access_token, refresh_token)
+        client = create_supabase()
+        response = client.auth.set_session(access_token, refresh_token)
         user = response.user
-        private_supabase.auth.update_user({"password": password})
+        client.auth.update_user({"password": password})
     except AuthApiError as e:
         return Response({"error": str(e)}, status=500)
     except Exception as e:

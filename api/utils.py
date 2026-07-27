@@ -9,6 +9,9 @@ url = os.getenv("SUPABASE_URL")
 public_supabase = create_client(url, os.getenv("SUPABASE_ANON_KEY"))
 private_supabase = create_client(url, os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
+def create_supabase():
+    return create_client(url, os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+
 def get_user(request):
     try:
         token = get_token(request)
