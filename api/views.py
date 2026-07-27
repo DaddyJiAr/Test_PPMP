@@ -373,7 +373,7 @@ def upload(request):
         return Response({"error": e.args[0]}, status=400, )
     if float(total_abc) < grand_total_amount:
         return Response({"error": "Total ABC is less than grand total"}, status=400, )
-    e = upload_excel(df[0], grand_total_amount, year, "Office Supply")
+    e = upload_excel(df[0], total_abc, year, "Office Supply")
     if isDualMode:
         e = upload_excel(df[1], total_abc, year, "Laboratory Supply/Equipment")
     create_procurement_log("PPMP", "upload", year, user["FullName"], "")
