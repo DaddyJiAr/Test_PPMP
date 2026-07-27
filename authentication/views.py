@@ -64,17 +64,15 @@ def update_password(request):
         return Response({"error": "Required fields missing", "missingFields": missing_fields}, status=400)
     new_password = request.POST['newPassword']
     try:
-        response = private_supabase.auth.sign_in_with_password({'email': user.email, 'password': new_password})
+        response = private_supabase.auth.update_user({
+            "password": new_password,
+        })
         if response is not None:
-            response = private_supabase.auth.update_user({
-                "password": new_password,
-            })
-            if response is not None:
-                return Response({"status": "success"}, status=200)
-            else:
-                return Response({"error": "Error updating password"}, status=500)
+            return Response({"status": "success"}, status=200)
+        else:
+            return Response({"error": "Error updating password"}, status=500)
     except AuthApiError:
-        return Response({"error": "Invalid login credentials"}, status=401)
+        return Response({"error": "Invalid login credentials", "user": user}, status=401)
     return Response(user.email)
 
 @api_view(['POST'])
