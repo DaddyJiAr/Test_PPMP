@@ -381,34 +381,14 @@ def upload(request):
 
 @api_view(['POST'])
 def export(request):
-    return export_formatted_excel("2026")
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
     year = request.POST["year"]
     ppmp_items = get_ppmp_items(year)
-    df = pd.DataFrame(columns=[ #create columsn
-        "General Description",
-        "Unit of Measure",
-        "Quantity",
-        "Unit Price",
-        "Total Amount"
-    ])
 
-    for item in ppmp_items.data:
-        df.loc[len(df)] = [ #create next row
-            item["ItemName"],
-            item["UnitName"],
-            item["PlannedQuantity"],
-            item["PricePerUnit"],
-            item["PlannedQuantity"] * item["PricePerUnit"]
-        ]
-
-    response = HttpResponse(content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") #create response with file format
-    response["Content-Disposition"] = 'attachment; filename="ppmp.xlsx"' #make file downloadable
-    df.to_excel(response, index=False) #put file in the response
     create_procurement_log("PPMP", "export", year, user["FullName"], "")
-    return response
+    return export_formatted_excel(year)
 
 
 @api_view(['GET'])

@@ -2,7 +2,7 @@ from time import time
 
 from django.http.response import HttpResponse
 from openpyxl import Workbook
-from openpyxl.styles import Font, Border, Side, Alignment
+from openpyxl.styles import Font, Border, Side, Alignment, PatternFill
 import pandas as pd
 from api.utils import private_supabase
 from api.views import get_ppmp_items
@@ -166,6 +166,7 @@ def upload_excel(df, total_ABC, year, ppmp_category="Office Supply"):
 def export_formatted_excel(year):
     wb = Workbook()
     ws = wb.active
+    ws.sheet_view.showGridLines = False
     title = "CICT-PPMP-" + year
     ws.title = title
     default_font = Font(name="Arial", size=10)
@@ -182,78 +183,15 @@ def export_formatted_excel(year):
 
     current_row = 2
     current_column = 1
-    ws.merge_cells(f"A{current_row}:R{current_row}")
-    ws[f"A{current_row}"] = "PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) " + year
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-    ws.column_dimensions[num_to_letter(current_column)].width = 20
-    current_row+=1
-    ws[f"A{current_row}"] = "END-USER/UNIT: CICT"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "left", "center")
-    current_row += 1
-    ws[f"A{current_row}"] = "Source of Fund: "
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "left", "center")
-
-    ws.merge_cells("A5:A7")
-    ws.merge_cells("B5:B7")
-    ws.merge_cells("C5:C7")
-    ws.merge_cells("D5:O5")
-    ws.merge_cells("P5:P7")
-    ws.merge_cells("Q5:Q7")
-    ws.merge_cells("R5:R7")
-
-    current_row = 5
-    current_column = 1
-    ws[f"{num_to_letter(current_column)}{current_row}"] = "Seq."
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
-    current_column += 1
-    ws[f"{num_to_letter(current_column)}{current_row}"] = "GENERAL DESCRIPTION"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
-    current_column += 1
-    ws[f"{num_to_letter(current_column)}{current_row}"] = "Unit of Measure"
-    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-    current_column += 1
-    ws[f"{num_to_letter(current_column)}{current_row}"] = "Number of Units Needed"
-    set_border_to_cell(ws, current_column, current_row, col_end=current_column + 11)
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-    current_column = 16
-    ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL"
-    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-    current_column += 1
-    ws[f"{num_to_letter(current_column)}{current_row}"] = "Price as per \nCatalogue"
-    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", wrap_text=True)
-    start_decimal_column = current_column
-    current_column += 1
-    ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL AMOUNT"
-    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-    end_decimal_column = current_column
-    end_number_column = current_column
-    end_column = current_column
-
-
-    current_row += 1
-    current_column = 4
-    start_number_column = current_column
-
-    months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
-    column_width = 8
-    for i in range (0, len(months)):
-        if i == 8:
-            column_width = 13
-        if i < 8:
-            column_width = 9
-        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column)}{current_row+1}")
-        ws[f"{num_to_letter(current_column)}{current_row}"] = months[i]
-        set_border_to_cell(ws, current_column, current_row, row_end=current_row + 1)
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-        current_column += 1
-
-    # next
+    (
+        current_column,
+        current_row,
+        start_number_column,
+        end_number_column,
+        start_decimal_column,
+        end_decimal_column,
+        end_column,
+    ) = set_header(ws, current_column, current_row, year)
     ppmp_items = get_ppmp_items(year)
 
     office_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Office Supply"]
@@ -344,32 +282,23 @@ def export_formatted_excel(year):
     ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
     set_border_to_cell(ws, current_column, current_row)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",)
+    gray_fill = PatternFill(
+        fill_type="solid",
+        start_color="A6A6A6",
+        end_color="A6A6A6"
+    )
+
+    for cell in ws[current_row]:
+        cell.fill = gray_fill
 
     end_row = current_row
+
+    current_column, current_row = set_signatories(ws, current_column, current_row)
+
     set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
     set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
-    current_column = 1
-    ws.column_dimensions[num_to_letter(current_column)].width = 5
-    current_column += 1
-    ws.column_dimensions[num_to_letter(current_column)].width = 45
-    current_column += 1
-    ws.column_dimensions[num_to_letter(current_column)].width = 20
-    current_column += 1
-    for i in range(12):
-        if i is 8:
-            ws.column_dimensions[num_to_letter(current_column)].width = 13
-        elif i > 8:
-            ws.column_dimensions[num_to_letter(current_column)].width = 9
-        else:
-            ws.column_dimensions[num_to_letter(current_column)].width = 8
-        current_column += 1
 
-    ws.column_dimensions[num_to_letter(current_column)].width = 16
-    current_column += 1
-    ws.column_dimensions[num_to_letter(current_column)].width = 15
-    current_column += 1
-    ws.column_dimensions[num_to_letter(current_column)].width = 19
-    current_column += 1
+    current_column, current_row = set_dimensions(ws, current_column, current_row)
 
     set_border_to_cell(
         ws,
@@ -425,6 +354,262 @@ def set_number_decimal(ws, start_column, end_column, start_row, end_row, decimal
         for j in range(start_column, end_column + 1):
             ws[f"{num_to_letter(j)}{i}"].number_format = '#,##0.' + ("0" * decimal_number)
 
+def set_dimensions(ws, current_column, current_row):
+    current_column = 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 5
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 45
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 20
+    current_column += 1
+    for i in range(12):
+        if i is 8:
+            ws.column_dimensions[num_to_letter(current_column)].width = 13
+        elif i > 8:
+            ws.column_dimensions[num_to_letter(current_column)].width = 9
+        else:
+            ws.column_dimensions[num_to_letter(current_column)].width = 8
+        current_column += 1
+
+    ws.column_dimensions[num_to_letter(current_column)].width = 16
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 15
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 19
+    current_column += 1
+    return current_column, current_row
+
+def set_header(ws, current_column, current_row, year):
+    ws.merge_cells(f"A{current_row}:R{current_row}")
+    ws[f"A{current_row}"] = "PROJECT PROCUREMENT MANAGEMENT PLAN (PPMP) " + year
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    ws.column_dimensions[num_to_letter(current_column)].width = 20
+    current_row += 1
+    ws[f"A{current_row}"] = "END-USER/UNIT: CICT"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "left", "center")
+    current_row += 1
+    ws[f"A{current_row}"] = "Source of Fund: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "left", "center")
+
+    ws.merge_cells("A5:A7")
+    ws.merge_cells("B5:B7")
+    ws.merge_cells("C5:C7")
+    ws.merge_cells("D5:O5")
+    ws.merge_cells("P5:P7")
+    ws.merge_cells("Q5:Q7")
+    ws.merge_cells("R5:R7")
+
+    current_row = 5
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Seq."
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "GENERAL DESCRIPTION"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Unit of Measure"
+    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Number of Units Needed"
+    set_border_to_cell(ws, current_column, current_row, col_end=current_column + 11)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column = 16
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL"
+    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Price as per \nCatalogue"
+    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",
+                       wrap_text=True)
+    start_decimal_column = current_column
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL AMOUNT"
+    set_border_to_cell(ws, current_column, current_row, row_end=current_row + 2)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    end_decimal_column = current_column
+    end_number_column = current_column
+    end_column = current_column
+
+    current_row += 1
+    current_column = 4
+    start_number_column = current_column
+
+    months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+              "November", "December"]
+    column_width = 8
+    for i in range(0, len(months)):
+        if i == 8:
+            column_width = 13
+        if i < 8:
+            column_width = 9
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column)}{current_row + 1}")
+        ws[f"{num_to_letter(current_column)}{current_row}"] = months[i]
+        set_border_to_cell(ws, current_column, current_row, row_end=current_row + 1)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+        current_column += 1
+
+    return (
+        current_column,
+        current_row,
+        start_number_column,
+        end_number_column,
+        start_decimal_column,
+        end_decimal_column,
+        end_column,
+    )
+
+def set_signatories(ws, current_column, current_row):
+
+    current_row += 2
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "NOTE: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", underline="single")
+
+    current_row += 1
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "1. "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center",)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Provide all necessary information."
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_row += 1
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "2. "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center",)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Several items may not be included in BulSU's consolidated catalogue. Thus, you may need provide your own description and estimated cost."
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_row += 1
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "3. "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center",)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Items that are included in previous years PPMP that were not procured and that are needed in CY2024 may be included in this PPMP."
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_row += 1
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "4. "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center",)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "The drop down list in column B may help guide the preparer of this PPMP to find the items needed by the colleges and offices. Nonetheless, the prepaper may manually search in the Catalogue Sheet of this PPMP form."
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_row += 1
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "5. "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center",)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = 'Kindly delete all " #N/A " remarks once done to prevent summazation error.'
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_row += 1
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "6. "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center",)
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "For events, kindly include only the materials which will used."
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+    current_column = 1
+
+
+    current_row += 2
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Prepared by:"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_column += 2
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Noted by:"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_column += 5
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Recommending Approval:"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_column += 4
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Approved by:"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    ppmp_signatories = private_supabase.table("DOCUMENT_SIGNATORY").select("*").eq("DocumentType", "PPMP DOCUMENT").execute()
+    if ppmp_signatories is None:
+        return None
+
+    ppmp_signatories = ppmp_signatories.data
+
+    current_row += 2
+    current_column = 1
+
+    end_user = [
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "End-user"
+    ]
+    if end_user:
+        end_user = end_user[0]
+    else:
+        end_user = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = end_user
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+
+    current_column += 2
+
+    budget_officer = [
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Budget Officer"
+    ]
+    if budget_officer:
+        budget_officer = budget_officer[0]
+    else:
+        budget_officer = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = budget_officer
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+
+
+    current_column += 5
+
+    chancellor = [
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Chancellor, Main Campus"
+    ]
+    if chancellor:
+        chancellor = chancellor[0]
+    else:
+        chancellor = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = chancellor
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+
+    current_column += 4
+
+    pres = [
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "University President"
+    ]
+    if pres:
+        pres = pres[0]
+    else:
+        pres = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = pres
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+
+    current_column = 1
+    current_row += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "End-user"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_column += 2
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Budget Officer"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_column += 5
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Chancellor, Main Campus"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_column += 4
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "University President"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    return current_column, current_row
+
 def ppmp_item_category(ppmp_category, ws, current_row):
     total_count = 0
     grand_total_amount = 0
@@ -435,8 +620,8 @@ def ppmp_item_category(ppmp_category, ws, current_row):
         ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
         set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
         set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "center", "center")
-
-
+        category_total_count = 0
+        category_grand_total_amount = 0
         for ppmp_item in items:
             current_row += 1
             current_column = 1
@@ -469,6 +654,7 @@ def ppmp_item_category(ppmp_category, ws, current_row):
             ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["TOTAL"]
             set_border_to_cell(ws, current_column, current_row)
             set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+            category_total_count += ppmp_item["TOTAL"]
             total_count += ppmp_item["TOTAL"]
 
             current_column += 1
@@ -480,5 +666,29 @@ def ppmp_item_category(ppmp_category, ws, current_row):
             ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["TOTAL AMOUNT"]
             set_border_to_cell(ws, current_column, current_row)
             set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+            category_grand_total_amount += ppmp_item["TOTAL AMOUNT"]
             grand_total_amount += ppmp_item["TOTAL AMOUNT"]
+
+        current_row += 1
+        current_column = 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "Subtotal:"
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+        set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, True, "center", "center",)
+
+        current_column += 3
+        ws[f"{num_to_letter(current_column)}{current_row}"] = category_total_count
+        set_border_to_cell(ws, current_column, current_row)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center", )
+
+        current_column = 16
+        ws[f"{num_to_letter(current_column)}{current_row}"] = category_total_count
+        set_border_to_cell(ws, current_column, current_row)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+        current_column += 2
+        ws[f"{num_to_letter(current_column)}{current_row}"] = category_grand_total_amount
+        set_border_to_cell(ws, current_column, current_row)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
     return total_count, grand_total_amount, current_row
