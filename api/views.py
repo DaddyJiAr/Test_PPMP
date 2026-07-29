@@ -1129,23 +1129,37 @@ def approve_in_lieu(user, in_lieu_id):
         return Response({"error": "Error updating in lieu request", "InLieuID": in_lieu_id}, status=500)
     return Response({"status": status}, status=200)
 
-@api_view(['POST'])
+@api_view(['GET'])
 def get_signatories(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    document_type = request.POST["documentType"]
-    if document_type is None:
-        return Response({"error": "Document type not found"}, status=401)
-    response = private_supabase.table("DOCUMENT_SIGNATORY").select("*").eq("DocumentType", document_type.upper()).execute()
+    response = private_supabase.table("DOCUMENT_SIGNATORY").select("*").execute()
     if response is None:
-        return Response({"error": "Document type not found"}, status=401)
-    signatories = [{
+        return Response({"error": "Error fetching signatories"}, status=401)
+    pr_signatories = [{
         "signatoryId": signatory["SignatoryID"],
         "fullName": signatory["FullName"],
         "position": signatory["PositionTitle"],
-    }for signatory in response.data]
-    return Response({"signatories": signatories}, status=200)
+    }for signatory in response.data
+    if signatory["DocumentType"] == "PURCHASE REQUEST"]
+    approved_signatories = [{
+        "signatoryId": signatory["SignatoryID"],
+        "fullName": signatory["FullName"],
+        "position": signatory["PositionTitle"],
+    } for signatory in response.data
+        if signatory["DocumentType"] == "APPROVED PPMP"]
+    revised_signatories = [{
+        "signatoryId": signatory["SignatoryID"],
+        "fullName": signatory["FullName"],
+        "position": signatory["PositionTitle"],
+    } for signatory in response.data
+        if signatory["DocumentType"] == "REVISED PPMP"]
+    return Response({"signatories": {
+        "prSignatories": pr_signatories,
+        "approvedSignatories": approved_signatories,
+        "revisedSignatories": revised_signatories
+    }}, status=200)
 
 @api_view(['PUT'])
 def update_signatories(request):
