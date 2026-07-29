@@ -268,6 +268,7 @@ def export_formatted_excel(year):
     total_count2, grand_total_amount2 = 0, 0
     total_count1, grand_total_amount1, current_row = ppmp_item_category(office_supplies, ws, current_row)
     if lab_supplies:
+        current_row += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = "LAB SUPPLIES"
         ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
         set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
