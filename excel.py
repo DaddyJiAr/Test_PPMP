@@ -265,6 +265,8 @@ def export_formatted_excel(year):
 
     start_row = current_row
     total_count, grand_total_amount, current_row = ppmp_item_category(office_supplies, ws, current_row)
+    if lab_supplies:
+        total_count, grand_total_amount, current_row = ppmp_item_category(lab_supplies, ws, current_row)
 
     current_row += 1
     current_column = 1
