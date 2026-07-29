@@ -264,8 +264,8 @@ def export_formatted_excel(year):
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
 
     start_row = current_row
-    total_count1, grand_total_amount1 = 0
-    total_count2, grand_total_amount2 = 0
+    total_count1, grand_total_amount1 = 0, 0
+    total_count2, grand_total_amount2 = 0, 0
     total_count1, grand_total_amount1, current_row = ppmp_item_category(office_supplies, ws, current_row)
     if lab_supplies:
         ws[f"{num_to_letter(current_column)}{current_row}"] = "LAB SUPPLIES"

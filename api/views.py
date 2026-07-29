@@ -385,7 +385,6 @@ def export(request):
     if user is None:
         return Response({"error": "User not found"}, status=401)
     year = request.POST["year"]
-    ppmp_items = get_ppmp_items(year)
 
     create_procurement_log("PPMP", "export", year, user["FullName"], "")
     return export_formatted_excel(year)
