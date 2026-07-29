@@ -1166,7 +1166,7 @@ def update_signatories(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    missing_fields = check_fields(["signatories"], request)
+    missing_fields = check_fields(["signatories", "documentType"], request)
     try:
         if missing_fields:
             return Response({"error": "Missing fields", "missingFields": missing_fields}, status=400)
@@ -1174,15 +1174,19 @@ def update_signatories(request):
         return Response({"error": "Invalid fields"}, status=400)
     payload = json.loads(request.data["signatories"])
     signatories = payload["signatories"]
-
+    document_type = request.data["documentType"]
     signatory_id = -1
     try:
+        delete = private_supabase.table("DOCUMENT_SIGNATORY").delete().eq("DocumentType", document_type).execute()
+        if delete is None:
+            return Response({"error": "Error deleting signatories"}, status=500)
         for signatory in signatories:
             signatory_id = signatory["signatoryId"]
-            private_supabase.table("DOCUMENT_SIGNATORY").update({
+            private_supabase.table("DOCUMENT_SIGNATORY").insert({
                 "FullName": signatory["fullName"],
                 "PositionTitle": signatory["positionTitle"],
-            }).eq("SignatoryID", signatory_id).execute()
+                "DocumentType": document_type,
+            }).execute()
         pass
     except Exception as e:
         return Response({"error": "Error updating signatories", "signatoryId": signatory_id, "err": f"{e}"}, status=500)
