@@ -1161,7 +1161,7 @@ def get_signatories(request):
         "revisedSignatories": revised_signatories
     }}, status=200)
 
-@api_view(['PUT'])
+@api_view(['POST'])
 def update_signatories(request):
     user = get_user(request)
     if user is None:
