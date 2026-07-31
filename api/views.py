@@ -10,6 +10,7 @@ from rest_framework.decorators import api_view
 from datetime import datetime
 from dateutil import parser as dateparser
 
+from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items
 from excel import testingPPMP, upload_excel, export_formatted_excel
 
@@ -387,7 +388,7 @@ def export(request):
     year = request.POST["year"]
 
     create_procurement_log("PPMP", "export", year, user["FullName"], "")
-    return export_formatted_excel(year, user["FullName"])
+    return export_formatted_excel(year, get_admin())
 
 
 @api_view(['GET'])

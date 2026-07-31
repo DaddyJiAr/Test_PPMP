@@ -4,6 +4,9 @@ from rest_framework.decorators import api_view
 
 from api.utils import private_supabase, get_user, get_token, check_admin, check_fields
 
+def get_admin():
+    admin_name = private_supabase.table("USER").select("FullName").eq("Role", "Admin").single().execute()
+    return admin_name.data["FullName"]
 
 @api_view(['GET'])
 def get_header_info(request):
@@ -20,8 +23,8 @@ def get_admin_name(request):
         return Response({"error": "User not found"}, status=401)
     else:
         try:
-            admin_name = private_supabase.table("USER").select("FullName").eq("Role", "Admin").single().execute()
-            return Response({"fullname": admin_name.data["FullName"]}, status=200)
+            admin_name = get_admin()
+            return Response({"fullname": admin_name}, status=200)
         except Exception as e:
             return Response({"error": "Error fetching for user"}, status=500)
 
