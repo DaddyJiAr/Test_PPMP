@@ -163,7 +163,7 @@ def upload_excel(df, total_ABC, year, ppmp_category="Office Supply"):
     except TypeError as e:
         return e
 
-def export_formatted_excel(year):
+def export_formatted_excel(year, dean_name):
     wb = Workbook()
     ws = wb.active
     ws.sheet_view.showGridLines = False
@@ -239,10 +239,10 @@ def export_formatted_excel(year):
                 "Seq.": i,
                 "GENERAL DESCRIPTION": item["ItemName"],
                 "Unit of Measure": item["UnitName"],
-                "January": item["PlannedQuantity"],
-                "TOTAL": item["PlannedQuantity"],
+                "January": item["AvailableQuantity"],
+                "TOTAL": item["AvailableQuantity"],
                 "Price as per Catalogue": item["PricePerUnit"],
-                "TOTAL AMOUNT": item["PlannedQuantity"] * item["PricePerUnit"],
+                "TOTAL AMOUNT": item["AvailableQuantity"] * item["PricePerUnit"],
             }
             for i, item in enumerate(category_items, start=1)
         ]
@@ -304,7 +304,7 @@ def export_formatted_excel(year):
 
     end_row = current_row
 
-    current_column, current_row = set_signatories(ws, current_column, current_row)
+    current_column, current_row = set_signatories(ws, current_column, current_row, dean_name)
 
     set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
     set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
@@ -473,7 +473,7 @@ def set_header(ws, current_column, current_row, year):
         end_column,
     )
 
-def set_signatories(ws, current_column, current_row):
+def set_signatories(ws, current_column, current_row, dean_name):
 
     current_row += 2
     current_column = 1
@@ -546,7 +546,7 @@ def set_signatories(ws, current_column, current_row):
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Approved by:"
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
 
-    ppmp_signatories = private_supabase.table("DOCUMENT_SIGNATORY").select("*").eq("DocumentType", "PPMP DOCUMENT").execute()
+    ppmp_signatories = private_supabase.table("DOCUMENT_SIGNATORY").select("*").eq("DocumentType", "APPROVED PPMP").execute()
     if ppmp_signatories is None:
         return None
 
@@ -555,14 +555,8 @@ def set_signatories(ws, current_column, current_row):
     current_row += 2
     current_column = 1
 
-    end_user = [
-        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "End-user"
-    ]
-    if end_user:
-        end_user = end_user[0]
-    else:
-        end_user = None
-    ws[f"{num_to_letter(current_column)}{current_row}"] = end_user
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = dean_name
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
 
     current_column += 2

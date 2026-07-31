@@ -387,7 +387,7 @@ def export(request):
     year = request.POST["year"]
 
     create_procurement_log("PPMP", "export", year, user["FullName"], "")
-    return export_formatted_excel(year)
+    return export_formatted_excel(year, user["FullName"])
 
 
 @api_view(['GET'])
@@ -463,7 +463,7 @@ def dashboard_cards(request):
     committed_funds = pending_pr + arrived_funds
 
     available_lieu_pool_funds = get_available_lieu_pool_funds(ppmp_items)
-    open_funds = get_open_funds(ppmp_items)
+    open_funds = total_annual_budget - get_open_funds(ppmp_items)
     logs = private_supabase.table("PROCUREMENT_LOG").select("*").execute()
     logs = [
         {
