@@ -43,6 +43,10 @@ def login(request):
     password = request.POST['password']
     try:
         response = public_supabase.auth.sign_in_with_password({'email': email, 'password': password})
+        user = private_supabase.auth.get_user(response.session.access_token).user
+        user = private_supabase.table("USER").select("*").eq("UserID", user.id).single().execute()
+        if user.data["Status"] != "Active":
+            return Response({"error": "User status not set to active."}, status=401)
         return Response({
             "status": "success",
             "access_token": response.session.access_token,
