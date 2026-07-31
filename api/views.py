@@ -1012,7 +1012,6 @@ def approve_in_lieu(user, in_lieu_id):
     budget_impact = in_lieu["BudgetImpact"]
     in_lieu_items = in_lieu_items.data
     in_lieu_additions = in_lieu_additions.data
-    in_lieu_item_ids = [in_lieu_item for in_lieu_item in in_lieu_items]
     in_lieu_additions_without_id = [in_lieu_addition for in_lieu_addition in in_lieu_additions if
                                     not in_lieu_addition["ItemID"]]
     in_lieu_additions_with_id = [in_lieu_addition for in_lieu_addition in in_lieu_additions if
@@ -1030,6 +1029,24 @@ def approve_in_lieu(user, in_lieu_id):
         if not fiscal_year.data:
             return Response({"error": "Fiscal year missing"}, status=401)
         fiscal_year_id = fiscal_year.data["FiscalYearID"]
+
+    in_lieu_item_map = {}
+    for in_lieu_item in in_lieu_items:
+        quantity_to_reduce = in_lieu_item["QuantityReduced"]
+        planned_quantity = get_item_detail(in_lieu_item["ItemID"], "PlannedQuantity")
+        available_quantity = get_item_detail(in_lieu_item["ItemID"], "AvailableQuantity")
+        if planned_quantity - quantity_to_reduce < 0 or available_quantity - quantity_to_reduce < 0:
+            return Response({"error": "Quantity to reduce is greater than planned quantity or available quantity"})
+        in_lieu_item_map[in_lieu_item["ItemID"]] = {
+            "QuantityReduced": quantity_to_reduce,
+            "PlannedQuantity": planned_quantity,
+            "AvailableQuantity": available_quantity
+        }
+    for in_lieu_item_id, in_lieu_item_data in in_lieu_item_map:
+        private_supabase.table("PPMP_ITEM").update({
+            "PlannedQuantity": in_lieu_item_data["PlannedQuantity"] - in_lieu_item_data["QuantityReduced"],
+            "AvailableQuantity": in_lieu_item_data["AvailableQuantity"] - in_lieu_item_data["QuantityReduced"],
+        }).eq("ItemID", in_lieu_item_id).execute()
 
     for in_lieu_addition in in_lieu_additions_without_id:
         response = private_supabase.table("PPMP_ITEM").insert({
@@ -1056,20 +1073,6 @@ def approve_in_lieu(user, in_lieu_id):
             "AvailableQuantity": available_quantity + quantity_to_add,
         }).eq("ItemID", in_lieu_addition_id["ItemID"]).execute()
 
-    for in_lieu_item_id in in_lieu_item_ids:
-        quantity_to_reduce = private_supabase.table("IN_LIEU_ITEM").select("QuantityReduced").eq("InLieuItemID", in_lieu_item_id["InLieuItemID"]).maybe_single().execute()
-        if quantity_to_reduce is None:
-            continue
-        quantity_to_reduce = quantity_to_reduce.data["QuantityReduced"]
-        planned_quantity = get_item_detail(in_lieu_item_id["ItemID"], "PlannedQuantity")
-        available_quantity = get_item_detail(in_lieu_item_id["ItemID"], "AvailableQuantity")
-        if planned_quantity - quantity_to_reduce < 0 or available_quantity - quantity_to_reduce < 0:
-            return Response({"error": "Quantity to reduce is greater than planned quantity or available quantity"})
-        private_supabase.table("PPMP_ITEM").update({
-            "PlannedQuantity": planned_quantity - quantity_to_reduce,
-            "AvailableQuantity": available_quantity - quantity_to_reduce,
-        }).eq("ItemID", in_lieu_item_id["ItemID"]).execute()
-
     year = fiscal_year.data["Year"]
     status = status.lower()
     for added in in_lieu_additions:
@@ -1083,16 +1086,15 @@ def approve_in_lieu(user, in_lieu_id):
             value=budget_impact
         )
 
-    reduction_map = {item["ItemID"]: item["QuantityReduced"] for item in in_lieu_items}
-    in_lieu_item_ids = list(reduction_map.keys())
 
+    in_lieu_item_ids = list(in_lieu_item_map.keys())
     response = private_supabase.table("PPMP_ITEM").select("ItemID, ItemName").in_("ItemID", in_lieu_item_ids).execute()
     in_lieu_items = response.data
 
     for item in in_lieu_items:
         item_id = item["ItemID"]
         item_name = item["ItemName"]
-        quantity_reduced = reduction_map.get(item_id)  # Get matching quantity
+        quantity_reduced = in_lieu_item_map.get(item_id)  # Get matching quantity
 
         create_procurement_log(
             "In Lieu",
