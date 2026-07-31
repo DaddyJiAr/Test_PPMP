@@ -592,7 +592,7 @@ def purchase_request(request):
     if response == True:
         return Response({"status": "success"})
     else:
-        return Response({"status": "fail"})
+        return Response({"error": "Error creating purchase request"}, status=400)
 
 
 @api_view(['PUT'])
@@ -626,7 +626,7 @@ def update_purchase_request_status(request):
     if response is not None:
         return Response({"status": "success"}, status=200)
     else:
-        return Response({"status": "fail"}, status=400)
+        return Response({"status": "Error updating purchase request"}, status=400)
 
 @api_view(['POST'])
 def procurement_cards(request):
