@@ -193,6 +193,7 @@ def export_formatted_excel(year, dean_name):
         end_column,
     ) = set_header(ws, current_column, current_row, year)
     ppmp_items = get_ppmp_items(year)
+    print(ppmp_items.data)
 
     office_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Office Supply"]
     lab_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Laboratory Supply/Equipment"]
@@ -215,10 +216,10 @@ def export_formatted_excel(year, dean_name):
                 "Seq.": i,
                 "GENERAL DESCRIPTION": item["ItemName"],
                 "Unit of Measure": item["UnitName"],
-                "January": item["PlannedQuantity"],
-                "TOTAL": item["PlannedQuantity"],
+                "January": item["AvailableQuantity"],
+                "TOTAL": item["AvailableQuantity"],
                 "Price as per Catalogue": item["PricePerUnit"],
-                "TOTAL AMOUNT": item["PlannedQuantity"] * item["PricePerUnit"],
+                "TOTAL AMOUNT": item["AvailableQuantity"] * item["PricePerUnit"],
             }
             for i, item in enumerate(category_items, start=1)
         ]
