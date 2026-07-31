@@ -1036,13 +1036,13 @@ def approve_in_lieu(user, in_lieu_id):
         planned_quantity = get_item_detail(in_lieu_item["ItemID"], "PlannedQuantity")
         available_quantity = get_item_detail(in_lieu_item["ItemID"], "AvailableQuantity")
         if planned_quantity - quantity_to_reduce < 0 or available_quantity - quantity_to_reduce < 0:
-            return Response({"error": "Quantity to reduce is greater than planned quantity or available quantity"})
+            return Response({"error": "Quantity to reduce is greater than planned quantity or available quantity"}, status=400)
         in_lieu_item_map[in_lieu_item["ItemID"]] = {
             "QuantityReduced": quantity_to_reduce,
             "PlannedQuantity": planned_quantity,
             "AvailableQuantity": available_quantity
         }
-    for in_lieu_item_id, in_lieu_item_data in in_lieu_item_map:
+    for in_lieu_item_id, in_lieu_item_data in in_lieu_item_map.items():
         private_supabase.table("PPMP_ITEM").update({
             "PlannedQuantity": in_lieu_item_data["PlannedQuantity"] - in_lieu_item_data["QuantityReduced"],
             "AvailableQuantity": in_lieu_item_data["AvailableQuantity"] - in_lieu_item_data["QuantityReduced"],
