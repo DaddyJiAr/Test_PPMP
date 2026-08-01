@@ -53,7 +53,7 @@ def login(request):
             "refresh_token": response.session.refresh_token,
         })
     except Exception as e:
-        return Response({"error": "Unauthorized. Error logging in."}, status=401)
+        return Response({"error": "Unauthorized. Error logging in.", "message": str(e),}, status=401)
 
 
 @api_view(['PUT'])

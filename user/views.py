@@ -75,7 +75,7 @@ def create_user(request):
         response = private_supabase.auth.admin.create_user({
             "email": email,
             "password": password,
-            "email_confirm": False
+            "email_confirm": True
         })
         if response is None:
             return Response({"error": "Error creating user"}, status=500)
