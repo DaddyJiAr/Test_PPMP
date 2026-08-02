@@ -1,4 +1,5 @@
 import joblib
+from ortools.sat.python import cp_model
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
@@ -66,3 +67,42 @@ def lahat(training_rows):
     probabilities = model.predict_proba(X_train)
     # print(probabilities)
     return probabilities
+
+def reverse_knapsack(items, target_budget):
+
+    model = cp_model.CpModel()
+
+    x = []
+
+    for i in range(len(items)):
+        x.append(model.NewBoolVar(f"x{i}"))
+
+    # Must reach target
+
+    model.Add(
+        sum(
+            x[i] * items[i]["BudgetImpact"]
+            for i in range(len(items))
+        ) >= target_budget
+    )
+
+    SCALE = 1000
+
+    model.Maximize(
+        sum(
+            x[i] * int(items[i]["AI_Score"] * SCALE)
+            for i in range(len(items))
+        )
+    )
+
+    solver = cp_model.CpSolver()
+
+    solver.Solve(model)
+
+    chosen = []
+
+    for i in range(len(items)):
+        if solver.Value(x[i]):
+            chosen.append(items[i])
+
+    return chosen
