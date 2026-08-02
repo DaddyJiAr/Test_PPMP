@@ -15,6 +15,14 @@ from .utils import private_supabase, get_user, check_fields, get_ppmp_items
 from excel import testingPPMP, upload_excel, export_formatted_excel
 
 
+def get_item_categories(request):
+    response = private_supabase.rpc("get_item_categories").execute()
+    return response.data
+
+def get_ppmp_categories(request):
+    response = private_supabase.rpc("get_ppmp_categories").execute()
+    return response.data
+
 def get_item(item_id):
     response = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", item_id).single().execute()
     return response.data
@@ -727,10 +735,14 @@ def get_in_lieu_data(request):
         "fulfilledQuantity": ppmp_item["FulfilledQuantity"],
         "priceCatalog": ppmp_item["PricePerUnit"],
     }for ppmp_item in ppmp_items.data]
+    item_categories = get_item_categories()
+    ppmp_categories = get_ppmp_categories()
     return Response({
         "userFullName": user_fullname,
         "openFunds": open_funds,
-        "ppmpReallocationData": ppmp_reallocation_data
+        "ppmpReallocationData": ppmp_reallocation_data,
+        "itemCategories": item_categories,
+        "ppmpCategories": ppmp_categories
     }, status=200)
 
 
@@ -788,6 +800,8 @@ def create_in_lieu_request(request):
             "PendingQuantity": 0,
             "FulfilledQuantity": 0,
             "FiscalYearID": fiscal_year_id,
+            "ItemCategory": item["itemCategory"],
+            "PpmpCategory": item["ppmpCategory"],
         }for item in new_items_list]
         # response = private_supabase.table("PPMP_ITEM").insert(new_items).execute()
         # if not response.data:
@@ -809,6 +823,8 @@ def create_in_lieu_request(request):
         "UnitPrice": item["unitPrice"],
         "Quantity": item["quantity"],
         "InLieuID": in_lieu_id,
+        "ItemCategory": item["itemCategory"],
+        "PpmpCategory": item["ppmpCategory"],
         "ItemID": item["itemId"] if not item["added"] else None,
     }for item in in_lieu_addition]
     if len(insert_in_lieu_addition) > 0:
@@ -1058,6 +1074,8 @@ def approve_in_lieu(user, in_lieu_id):
             "PendingQuantity": 0,
             "FulfilledQuantity": 0,
             "FiscalYearID": fiscal_year_id,
+            "ItemCategory": in_lieu_addition["ItemCategory"],
+            "PpmpCategory": in_lieu_addition["PpmpCategory"],
         }).execute()
         in_lieu_addition["ItemID"] = response.data[0]["ItemID"]
 
