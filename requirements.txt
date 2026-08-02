@@ -1,3 +1,4 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 annotated-types==0.7.0
 anyio==4.14.1
 asgiref==3.11.1
@@ -56,6 +57,7 @@ supabase-auth==2.31.0
 supabase-functions==2.31.0
 sympy==1.14.0
 torch==2.13.0+cpu
+torchvision=0.27+cpu
 types-PyYAML==6.0.12.20260518
 typing-inspection==0.4.2
 typing_extensions==4.16.0
