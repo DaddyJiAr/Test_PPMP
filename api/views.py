@@ -1,19 +1,14 @@
 import json
-import math
-import time
-import pandas as pd
 
-from django.http import HttpResponse
 from postgrest import APIError
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from datetime import datetime
-from dateutil import parser as dateparser
 
 from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items
 from excel import testingPPMP, upload_excel, export_formatted_excel
-
+from smart_suggest.ml_suggestion import MLSuggest
 
 def get_item(item_id):
     response = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", item_id).single().execute()
@@ -123,15 +118,12 @@ def update_pr_status(status, item_id, quantity):
         }).eq("ItemID", item_id).execute()
     return response is not None
 
-def get_aggregate_data(fiscal_year):
-    return private_supabase.rpc("get_aggregate_for_inlieu", {"fiscal_year": fiscal_year}).execute().data
-
 def insert_filtered_aggregate_data(data):
     response = private_supabase.table("AGGREGATE_PPMP_ITEM").insert([
         {"ItemID": r["ItemID"],
          "created_at": r["created_at"],
-         "ItemName":r["ItemName"],
-         "UnitName":r["UnitName"],
+         "ItemName": r["ItemName"],
+         "UnitName": r["UnitName"],
          "PricePerUnit": r["PricePerUnit"],
          "PlannedQuantity": r["PlannedQuantity"],
          "AvailableQuantity": r["AvailableQuantity"],
@@ -151,35 +143,38 @@ def insert_filtered_aggregate_data(data):
          "InLieuDate": r["InLieuDate"]} for _, r in data
         ]).execute()
     return response is not None
-    
+
 def score_aggregate_data(df, total_price):
     def parse_inlieu_date(date):
-        return dateparser.parse(date)
-    
+        return dateparser.parse(date) if type(date) is str else ""
+
     now_date = datetime.now()
     min_date = parse_inlieu_date(df["InLieuDate"].min())
     max_date = parse_inlieu_date(df["InLieuDate"].max())
-    
+
     weights = {
-        "frequency": .3,
-        "price": .4,
+        "frequency": .4,
+        "price": .3,
         "staleness": .2,
         "yearly_staleness": .1
     }
-    
+
     df["PriceDifference"] = (df["PricePerUnit"] * df["AvailableQuantity"] - total_price) / total_price
     df["PriceScore"] = (df["PriceDifference"] - df["PriceDifference"].min()) / (df["PriceDifference"].max() - df["PriceDifference"].min())
-    df["FrequentScore"] = (df["Occurrence"].min() * df["QuantityReduced"].min() / df["Occurrence"].max() * df["QuantityReduced"].max())
+    df["FrequentScore"] = (df["Occurrence"].min() * df["QuantityReduced"].min()) / (df["Occurrence"].max() * df["QuantityReduced"].max())
     df["StaleScore"] = min((now_date.year - min_date.year) / max_date.year, 1)
 
     for _, row in df.iterrows():
-        row["YearlyStaleScore"] = min(((now_date.timestamp() - min_date.timestamp() / max_date.timestamp())) if parse_inlieu_date(row["InLieuDate"]).year == now_date.year else 0, 1)
-        
+        row_date = parse_inlieu_date(row["InLieuDate"])
+        row_year = row_date if row_date == "" else row_date.year
+
+        row["YearlyStaleScore"] = min(((now_date.timestamp() - min_date.timestamp() / max_date.timestamp())) if row_year == now_date.year else 0, 1)
+
     df["FinalScore"] = df["PriceScore"] * weights['price'] + df["FrequentScore"] * weights["frequency"] + df["StaleScore"] * weights['staleness'] + df["YearlyStaleScore"] * weights['yearly_staleness']
     df["Efficiency"] = df["FinalScore"] / df["PricePerUnit"].median()
-    
+
     new_df = df.sort_values("Efficiency", ascending=False, inplace=False)
-    
+
     return new_df
 
 def select_minimum_items(df, total_price):
@@ -191,9 +186,42 @@ def select_minimum_items(df, total_price):
         return None
 
     cutoff_idx = df[df["CumStockValue"] >= total_price].index[0]
-    
-    print(df.loc[:cutoff_idx])
     return df.loc[:cutoff_idx]
+
+def ml_learn_from_decision(supabase, fiscal_year, items):
+    try:
+        budget = sum(
+            float(item.get("reduceQuantity", 0) or 0) * float(item.get("priceCatalog", 0) or 0)
+            for item in items
+        )
+        if budget > 0:
+            ml = MLSuggest(supabase, fiscal_year)
+            ml.learn_from_decision(items, budget)
+            ml.clear_last_recommendation()
+    except Exception as e:
+        print(f"ML feedback failed: {e}")
+        
+def ml_learn_from_rejection(supabase, fiscal_year, budget=None, items=None):
+    try:
+        if budget is None and items is not None:
+            budget = sum(
+                float(item.get("reduceQuantity", 0) or 0) * float(item.get("priceCatalog", 0) or 0)
+                for item in items
+            )
+        elif items is None:
+            print("No budget to learn from")
+            return 
+        
+        if budget > 0:
+            ml = MLSuggest(supabase, fiscal_year)
+            previous = ml.load_last_recommendation()
+            
+            if previous and previous.get("items"):
+                ml.learn_from_rejection(items, budget)
+                
+            return ml
+    except Exception as e:
+        print(f"ML feedback failed: {e}")
 
 @api_view(['POST'])
 def get_inlieu_suggestions(request):
@@ -201,68 +229,31 @@ def get_inlieu_suggestions(request):
     if user is None:
         return Response({"error": "User not found"}, status=401)
 
-    total_price = float(request.POST["Sum"])
+    budget = float(request.POST["Sum"])
     fiscal_year = request.POST["FiscalYear"]
-    
-    aggregate_data = get_aggregate_data(fiscal_year)
-    
-    df = pd.DataFrame(aggregate_data)
-    df.drop_duplicates("ItemID", inplace=True)
-    
-    df = select_minimum_items(score_aggregate_data(df, total_price), total_price)
-    if df is None:
-        return Response(
-            {"error": "Requested in lieu budget exceeds the total value of in lieu items"},
-            status=400
-        )
-    
-    filtered_aggregate_data = [{
-        "itemId": row["ItemID"],
-        "itemName": row["ItemName"],
-        "unitMeasurement": row["UnitName"],
-        "plannedQuantity": row["PlannedQuantity"],
-        "availableQuantity": row["AvailableQuantity"],
-        "pendingQuantity": row["PendingQuantity"],
-        "fulfilledQuantity": row["FulfilledQuantity"],
-        "priceCatalog": row["PricePerUnit"], 
-        "reduceAmount": 0} for _, row in df.iterrows()]
-    result = []
 
-    #insert_filtered_aggregate_data(filtered_aggregate_data)
+    ml = ml_learn_from_rejection(private_supabase, fiscal_year, budget)
     
-    remaining_budget = total_price
-    sv = lambda row: row["priceCatalog"] * row["availableQuantity"]
-
-    while filtered_aggregate_data:
-        cap =  remaining_budget / len(filtered_aggregate_data)
+    if ml is None:
+        ml = MLSuggest(private_supabase, fiscal_year)
         
-        print(f"The current cap is {cap}")
-        max_out = [x for x in filtered_aggregate_data if sv(x) <= cap]
+    try:
+        res = ml.recommend(budget)
+    except Exception as e:
+        return Response({
+            "error": str(e),
+        }, status=400)
+
+    ml.save_last_recommendation(res, budget)
+
+    result = [{
+        "itemId": getattr(res, "ItemID"),
+        "itemName": getattr(res, "ItemName"),
+        "unitMeasurement": getattr(res, "UnitName"),
+        "reduceQuantity": getattr(res, "Quantity"),
+        "priceCatalog": getattr(res, "PricePerUnit"),
+    } for res in res.itertuples()]
     
-        if not max_out:
-            print("\nSomething's maxed out\n")
-            for row in filtered_aggregate_data:
-                row["reduceAmount"] = math.ceil(cap / row["priceCatalog"])
-                
-                print(f"Set {row["itemName"]}'s reduction to {row["reduceAmount"]}")
-                result.extend(filtered_aggregate_data)
-            break
-        
-        print("\nNo item has been maxed out\n")
-        for row in max_out:
-            row["reduceAmount"] = row["availableQuantity"]
-            remaining_budget -= sv(row)
-            print(f"Set {row["itemName"]}'s reduction to {row["reduceAmount"]}")
-            
-            print(f"The remaining budget is now {remaining_budget}")
-            
-        result.extend(max_out)
-
-        max_out_ids = {x["itemId"] for x in max_out}
-        filtered_aggregate_data = [x for x in filtered_aggregate_data if x["itemId"] not in max_out_ids]
-        
-        print(f"Data list has been reduced to {len(filtered_aggregate_data)}")
-  
     return Response(data={"data": result}, status=200)
 
 @api_view(['POST'])
@@ -329,7 +320,6 @@ def get_ppmp_preview(request):
             "data": df[0].to_dict(orient="records")
         })
 
-
 @api_view(['POST'])
 def upload(request):
     user = get_user(request)
@@ -389,7 +379,6 @@ def export(request):
 
     create_procurement_log("PPMP", "export", year, user["FullName"], "")
     return export_formatted_excel(year, get_admin())
-
 
 @api_view(['GET'])
 def fiscal_years(request):
@@ -821,6 +810,9 @@ def create_in_lieu_request(request):
         if not response.data:
             return Response({"error": "Error inserting In Lieu Items"}, status=401)
     year = get_year_str(fiscal_year_id)
+
+    ml_learn_from_decision(private_supabase, year, in_lieu_items)
+
     for reduced in in_lieu_items: # in_lieu_items para may name
         create_procurement_log(
             "In Lieu",
@@ -976,9 +968,9 @@ def reject_in_lieu(user, in_lieu_id):
         in_lieu_item_ids = list(reduction_map.keys())
 
         response = private_supabase.table("PPMP_ITEM").select("ItemID, ItemName").in_("ItemID", in_lieu_item_ids).execute()
-        in_lieu_items = response.data
+        to_reduce_ppmp_items = response.data
 
-        for item in in_lieu_items:
+        for item in to_reduce_ppmp_items:
             item_id = item["ItemID"]
             item_name = item["ItemName"]
             quantity_reduced = reduction_map.get(item_id)
@@ -995,6 +987,9 @@ def reject_in_lieu(user, in_lieu_id):
         response = private_supabase.table("IN_LIEU").update({"Status": status}).eq("InLieuID", in_lieu_id).execute()
         if response is None:
             return Response({"error": "Error updating in lieu request", "InLieuID": in_lieu_id}, status=500)
+            
+        ml_learn_from_rejection(private_supabase, fiscal_year, items=in_lieu_items.data)
+        
         return Response({"status": "success"}, status=200)
     except APIError:
         return Response({"error": "InLieu not found", "InLieuID": in_lieu_id}, status=404)
@@ -1109,6 +1104,9 @@ def approve_in_lieu(user, in_lieu_id):
     response = private_supabase.table("IN_LIEU").update({"Status": status}).eq("InLieuID", in_lieu_id).execute()
     if response is None:
         return Response({"error": "Error updating in lieu request", "InLieuID": in_lieu_id}, status=500)
+    
+    ml_learn_from_decision(private_supabase, year, in_lieu_items)
+    
     return Response({"status": status}, status=200)
 
 @api_view(['GET'])

@@ -157,3 +157,11 @@ for result in ppmp_items:
 
 df = pd.DataFrame(rows)
 df.to_excel("ml.xlsx", index=False)
+# from excel import testingPPMP
+# 
+# testingPPMP("PPMP.xlsx", 11, 1, 2, 15, 16)
+from smart_suggest.ml_suggestion import MLSuggest
+from api.utils import private_supabase
+
+ss = MLSuggest(private_supabase, '2026')
+ss.ml_self_train()
