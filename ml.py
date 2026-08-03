@@ -4,17 +4,18 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 import pandas as pd
+from ortools.sat.python import cp_model
 
 def get_x_y(training_rows):
     df = pd.DataFrame(training_rows)
     X = df[
         [
-            "PricePerUnit",
+            "InLieuTotalQuantity",
             "PlannedQuantity",
             "AvailableQuantity",
         ]
     ]
-    Y = df["WasReduced"]
+    Y = df["TargetWasCut"]
     return X, Y
 
 def split(X, Y):
@@ -42,23 +43,23 @@ def save_model(model):
 
 def lahat(training_rows):
     df = pd.DataFrame(training_rows)
-    df = pd.get_dummies(df, columns=["PpmpCategory"])
     X = df[
         [
-            "PricePerUnit",
+            "InLieuTotalQuantity",
             "PlannedQuantity",
             "AvailableQuantity",
         ]
     ]
-    Y = df["WasReduced"]
+    Y = df["TargetWasCut"]
     X_train, X_test, Y_train, Y_test = train_test_split(
         X,
         Y,
         test_size=0.2,
         random_state=42
     )
-    model = RandomForestClassifier(random_state=42)
-    model.fit(X_train, Y_train)
+    # model = RandomForestClassifier(random_state=42)
+    # model.fit(X_train, Y_train)
+    model = joblib.load("in_lieu_model.pkl")
     predictions = model.predict(X_test)
     # print(confusion_matrix(Y_test, predictions))
     # print(classification_report(Y_test, predictions))

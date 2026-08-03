@@ -42,6 +42,7 @@
 #
 # response = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", 69).execute()
 # print(response.data)
+import joblib
 
 import joblib
 
@@ -168,58 +169,58 @@ import pandas as pd
 # X_train, X_test, Y_train, Y_test = split(X, Y)
 # model = model(X_train, Y_train)
 # test(X_test, Y_test, model)
+
+legit_training_data = list(training_data.values())
+model, probabilities = lahat(legit_training_data)
+joblib.dump(model, "in_lieu_model.pkl")
+for i, item in enumerate(legit_training_data):
+    item["AI_Score"] = probabilities[i][1]
 #
-# legit_training_data = list(training_data.values())
-# model, probabilities = lahat(legit_training_data)
-# joblib.dump(model, "in_lieu_model.pkl")
-# for i, item in enumerate(legit_training_data):
-#     item["AI_Score"] = probabilities[i][1]
-#
-# legit_training_data.sort(
-#     key=lambda x: x["AI_Score"],
-#     reverse=True
-# )
-#
-#
-# score_map = {
-#     row["ItemCategory"]: row["AI_Score"]
-#     for row in legit_training_data
-# }
-#
-# for ppmp_item in ppmp_items:
-#
-#     ppmp_item["AI_Score"] = score_map.get(
-#         ppmp_item["ItemCategory"],
-#         0
-#     )
-#
-#     ppmp_item["InLieuTotalQuantity"] = in_lieu_item_quantity.get(
-#         ppmp_item["ItemID"],
-#         0
-#     )
-#
-#     ppmp_item["BudgetImpact"] = int(
-#         round(
-#             ppmp_item["PricePerUnit"] *
-#             ppmp_item["PlannedQuantity"]
-#         )
-#     )
-#
-# ppmp_items.sort(
-#     key=lambda x: x["AI_Score"],
-#     reverse=True
-# )
-#
-#
-# chosen = reverse_knapsack(ppmp_items, 100)
-#
-# rows = []
-# for result in chosen:
-#     row = result.copy()   # Copy the nested item dict
-#     rows.append(row)
-#
-# df = pd.DataFrame(rows)
-# df.to_excel("tr.xlsx", index=False)
+legit_training_data.sort(
+    key=lambda x: x["AI_Score"],
+    reverse=True
+)
+
+
+score_map = {
+    row["ItemCategory"]: row["AI_Score"]
+    for row in legit_training_data
+}
+
+for ppmp_item in ppmp_items:
+
+    ppmp_item["AI_Score"] = score_map.get(
+        ppmp_item["ItemCategory"],
+        0
+    )
+
+    ppmp_item["InLieuTotalQuantity"] = in_lieu_item_quantity.get(
+        ppmp_item["ItemID"],
+        0
+    )
+
+    ppmp_item["BudgetImpact"] = int(
+        round(
+            ppmp_item["PricePerUnit"] *
+            ppmp_item["PlannedQuantity"]
+        )
+    )
+
+ppmp_items.sort(
+    key=lambda x: x["AI_Score"],
+    reverse=True
+)
+
+
+chosen = reverse_knapsack(ppmp_items, 100)
+
+rows = []
+for result in chosen:
+    row = result.copy()   # Copy the nested item dict
+    rows.append(row)
+
+df = pd.DataFrame(rows)
+df.to_excel("ml.xlsx", index=False)
 # from excel import testingPPMP
 # 
 # testingPPMP("PPMP.xlsx", 11, 1, 2, 15, 16)
