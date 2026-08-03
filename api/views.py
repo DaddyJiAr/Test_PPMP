@@ -927,6 +927,8 @@ def get_in_lieu_approvals(request):
                         "priceCatalog": ppmp_lookup[in_lieu_item["ItemID"]]["PricePerUnit"],
                         "plannedQuantity": ppmp_lookup[in_lieu_item["ItemID"]]["PlannedQuantity"],
                         "availableQuantityAfter": ppmp_lookup[in_lieu_item["ItemID"]]["AvailableQuantity"] - in_lieu_item["QuantityReduced"],
+                        "itemCategory": in_lieu_item["ItemCategory"],
+                        "ppmpCategory": in_lieu_item["PpmpCategory"]
                     }
                     for in_lieu_item in in_lieu_items_map.get(in_lieu["InLieuID"], [])
                 ],
