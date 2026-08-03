@@ -422,7 +422,7 @@ def dashboard_cards(request):
         if item["ItemID"] is not None
     })
     purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("ItemID, RequestQuantity, Status").in_("ItemID", item_ids).execute()
-    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq('FiscalYearID', fiscal_year.data["FiscalYearID"]).execute()
+    in_lieus = private_supabase.table("IN_LIEU").select("Status").eq('FiscalYearID', fiscal_year.data["FiscalYearID"]).execute()
     # retry
     # for attempt in range(3):
     #     purchase_requests = (
