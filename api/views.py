@@ -10,11 +10,11 @@ from .utils import private_supabase, get_user, check_fields, get_ppmp_items
 from excel import testingPPMP, upload_excel, export_formatted_excel
 from smart_suggest.ml_suggestion import MLSuggest
 
-def get_item_categories(request):
+def get_item_categories():
     response = private_supabase.rpc("get_item_categories").execute()
     return response.data
 
-def get_ppmp_categories(request):
+def get_ppmp_categories():
     response = private_supabase.rpc("get_ppmp_categories").execute()
     return response.data
 
