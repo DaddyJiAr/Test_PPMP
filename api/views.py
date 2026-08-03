@@ -724,6 +724,8 @@ def get_in_lieu_data(request):
         "pendingQuantity": ppmp_item["PendingQuantity"],
         "fulfilledQuantity": ppmp_item["FulfilledQuantity"],
         "priceCatalog": ppmp_item["PricePerUnit"],
+        "itemCategory": ppmp_item["ItemCategory"],
+        "ppmpCategory": ppmp_item["PpmpCategory"],
     }for ppmp_item in ppmp_items.data]
     item_categories = get_item_categories()
     ppmp_categories = get_ppmp_categories()
