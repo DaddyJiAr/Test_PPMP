@@ -44,47 +44,49 @@
 # print(response.data)
 import joblib
 
+import joblib
+
 from api.utils import private_supabase
 from ml import get_x_y, split, model, test, lahat, reverse_knapsack
 import pandas as pd
 
-ppmp_items = private_supabase.table("PPMP_ITEM").select("*").execute()
-ppmp_items = ppmp_items.data
-ppmp_item_ids = [ppmp_item["ItemID"] for ppmp_item in ppmp_items]
-item_categories = [ppmp_item["ItemCategory"] for ppmp_item in ppmp_items if ppmp_item["ItemCategory"] not in (None, "", "NULL")]
-in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").execute()
-in_lieus = in_lieus.data
-in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
-in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
-in_lieu_items = in_lieu_items.data
-in_lieu_item_map = {}
-for in_lieu_item in in_lieu_items:
-    in_lieu_item_map[in_lieu_item["ItemID"]] = True
-in_lieu_item_quantity = {}
-for in_lieu_item in in_lieu_items:
-    in_lieu_item_quantity[in_lieu_item["ItemID"]] = in_lieu_item["QuantityReduced"]
-training_data = {}
-for item_category in item_categories:
-    planned_quantity = 0
-    available_quantity = 0
-    in_lieu_total_quantity = 0
-    target_was_cut = False
-    for ppmp_item in ppmp_items:
-        try:
-            if ppmp_item["ItemCategory"] == item_category:
-                planned_quantity += ppmp_item["PlannedQuantity"]
-                available_quantity += ppmp_item["AvailableQuantity"]
-                in_lieu_total_quantity += in_lieu_item_quantity[ppmp_item["ItemID"]]
-        except KeyError:
-            pass
-    training_data[item_category] = {
-        "ItemCategory": item_category,
-        "PlannedQuantity": planned_quantity,
-        "AvailableQuantity": available_quantity,
-        "InLieuTotalQuantity": in_lieu_total_quantity,
-        "TargetWasCut": in_lieu_total_quantity > 0,
-    }
-
+# ppmp_items = private_supabase.table("PPMP_ITEM").select("*").execute()
+# ppmp_items = ppmp_items.data
+# ppmp_item_ids = [ppmp_item["ItemID"] for ppmp_item in ppmp_items]
+# item_categories = [ppmp_item["ItemCategory"] for ppmp_item in ppmp_items if ppmp_item["ItemCategory"] not in (None, "", "NULL")]
+# in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").execute()
+# in_lieus = in_lieus.data
+# in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
+# in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
+# in_lieu_items = in_lieu_items.data
+# in_lieu_item_map = {}
+# for in_lieu_item in in_lieu_items:
+#     in_lieu_item_map[in_lieu_item["ItemID"]] = True
+# in_lieu_item_quantity = {}
+# for in_lieu_item in in_lieu_items:
+#     in_lieu_item_quantity[in_lieu_item["ItemID"]] = in_lieu_item["QuantityReduced"]
+# training_data = {}
+# for item_category in item_categories:
+#     planned_quantity = 0
+#     available_quantity = 0
+#     in_lieu_total_quantity = 0
+#     target_was_cut = False
+#     for ppmp_item in ppmp_items:
+#         try:
+#             if ppmp_item["ItemCategory"] == item_category:
+#                 planned_quantity += ppmp_item["PlannedQuantity"]
+#                 available_quantity += ppmp_item["AvailableQuantity"]
+#                 in_lieu_total_quantity += in_lieu_item_quantity[ppmp_item["ItemID"]]
+#         except KeyError:
+#             pass
+#     training_data[item_category] = {
+#         "ItemCategory": item_category,
+#         "PlannedQuantity": planned_quantity,
+#         "AvailableQuantity": available_quantity,
+#         "InLieuTotalQuantity": in_lieu_total_quantity,
+#         "TargetWasCut": in_lieu_total_quantity > 0,
+#     }
+#
 
 #
 # # RULE BASED
@@ -147,7 +149,7 @@ for item_category in item_categories:
 #
 # for scored_item in scored_items:
 #     print(scored_item)
-
+#
 # ML
 # training_rows = []
 # for ppmp_item in ppmp_items:
@@ -162,7 +164,7 @@ for item_category in item_categories:
 #         "PpmpCategory": ppmp_item["PpmpCategory"],
 #         "WasReduced": was_reduced,
 #     })
-
+#
 # X, Y = get_x_y(legit_training_data)
 # X_train, X_test, Y_train, Y_test = split(X, Y)
 # model = model(X_train, Y_train)

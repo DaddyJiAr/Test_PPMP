@@ -1,4 +1,5 @@
 import joblib
+from ortools.sat.python import cp_model
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
@@ -60,13 +61,13 @@ def lahat(training_rows):
     # model.fit(X_train, Y_train)
     model = joblib.load("in_lieu_model.pkl")
     predictions = model.predict(X_test)
-    print(confusion_matrix(Y_test, predictions))
-    print(classification_report(Y_test, predictions))
-    print(accuracy_score(Y_test, predictions))
-    probabilities = model.predict_proba(X)
-    return model, probabilities
-
-
+    # print(confusion_matrix(Y_test, predictions))
+    # print(classification_report(Y_test, predictions))
+    # print(accuracy_score(Y_test, predictions))
+    prediction_data = df.drop(columns=["WasReduced"])
+    probabilities = model.predict_proba(X_train)
+    # print(probabilities)
+    return probabilities
 
 def reverse_knapsack(items, target_budget):
 
