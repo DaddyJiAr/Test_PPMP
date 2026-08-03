@@ -451,8 +451,9 @@ def dashboard_cards(request):
             continue
         if purchase_request["Status"] == "Pending":
             requested_funds += purchase_request_item["PricePerUnit"] * purchase_request["RequestQuantity"]
-    for _ in in_lieus.data:
-        pending_in_lieu_count += 1
+    for in_lieu in in_lieus.data:
+        if in_lieu["Status"] == "Pending":
+            pending_in_lieu_count += 1
 
     for ppmp_item in ppmp_items.data:
         pending_pr += ppmp_item["PricePerUnit"] * ppmp_item["PendingQuantity"]
@@ -912,6 +913,8 @@ def get_in_lieu_approvals(request):
                         "itemName": in_lieu_addition["ItemName"],
                         "unitMeasurement": in_lieu_addition["UnitName"],
                         "priceCatalog": in_lieu_addition["UnitPrice"],
+                        "itemCategory": in_lieu_addition["ItemCategory"],
+                        "ppmpCategory": in_lieu_addition["PpmpCategory"]
                     }
                     for in_lieu_addition in additions_map.get(in_lieu["InLieuID"], [])
                 ],
