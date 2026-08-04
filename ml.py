@@ -82,40 +82,58 @@ def test(training_rows):
     return model.predict_proba(X)
 
 def reverse_knapsack(items, target_budget):
-
     model = cp_model.CpModel()
 
-    x = []
+    x = [model.NewBoolVar(f"x{i}") for i in range(len(items))]
 
-    for i in range(len(items)):
-        x.append(model.NewBoolVar(f"x{i}"))
-
-    # Must reach target
-
-    model.Add(
-        sum(
-            x[i] * items[i]["BudgetImpact"]
-            for i in range(len(items))
-        ) >= target_budget
+    total_budget = sum(
+        x[i] * items[i]["BudgetImpact"]
+        for i in range(len(items))
     )
+
+    # Must reach the required reduction
+    model.Add(total_budget >= target_budget)
+
+    # First objective: smallest possible budget
+    model.Minimize(total_budget)
+
+    solver = cp_model.CpSolver()
+    status = solver.Solve(model)
+
+    if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        return []
+
+    minimum_budget = solver.Value(total_budget)
+
+    model2 = cp_model.CpModel()
+
+    x = [model2.NewBoolVar(f"x{i}") for i in range(len(items))]
+
+    total_budget = sum(
+        x[i] * items[i]["BudgetImpact"]
+        for i in range(len(items))
+    )
+
+    model2.Add(total_budget >= target_budget)
+    model2.Add(total_budget == minimum_budget)
 
     SCALE = 1000
 
-    model.Maximize(
+    model2.Maximize(
         sum(
             x[i] * int(items[i]["AI_Score"] * SCALE)
             for i in range(len(items))
         )
     )
 
-    solver = cp_model.CpSolver()
-
-    solver.Solve(model)
+    solver2 = cp_model.CpSolver()
+    status = solver2.Solve(model2)
 
     chosen = []
 
-    for i in range(len(items)):
-        if solver.Value(x[i]):
-            chosen.append(items[i])
+    if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+        for i in range(len(items)):
+            if solver2.Value(x[i]):
+                chosen.append(items[i])
 
     return chosen

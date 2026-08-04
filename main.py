@@ -169,17 +169,27 @@ for item_category in item_categories:
 # X_train, X_test, Y_train, Y_test = split(X, Y)
 # model = model(X_train, Y_train)
 # test(X_test, Y_test, model)
-
+ppmp_items = [ppmp_item for ppmp_item in ppmp_items if not (int(ppmp_item["PlannedQuantity"]) <= 0 or int(ppmp_item["AvailableQuantity"]) <= 0)]
 training_data = {}
 for ppmp_item in ppmp_items:
+    planned = int(ppmp_item["PlannedQuantity"])
+    available = int(ppmp_item["AvailableQuantity"])
+    if planned <= 0 or available <= 0:
+        print("Skipping:", ppmp_item["ItemID"], planned, available)
+        continue
+    print("Keeping:", ppmp_item["ItemID"])
     try:
         training_data[ppmp_item["ItemID"]] = {
-        "PlannedQuantity": ppmp_item["PlannedQuantity"],
-        "AvailableQuantity": ppmp_item["AvailableQuantity"],
+        "PlannedQuantity": planned,
+        "AvailableQuantity": available,
         "InLieuTotalQuantity": in_lieu_item_quantity[ppmp_item["ItemID"]],
     }
     except KeyError:
-        pass
+        training_data[ppmp_item["ItemID"]] = {
+            "PlannedQuantity": planned,
+            "AvailableQuantity": available,
+            "InLieuTotalQuantity": 0,
+        }
 
 
 legit_training_data_list = list(training_data.values())
