@@ -50,43 +50,43 @@ from api.utils import private_supabase
 from ml import get_x_y, split, model, test, lahat, reverse_knapsack
 import pandas as pd
 
-# ppmp_items = private_supabase.table("PPMP_ITEM").select("*").execute()
-# ppmp_items = ppmp_items.data
-# ppmp_item_ids = [ppmp_item["ItemID"] for ppmp_item in ppmp_items]
-# item_categories = [ppmp_item["ItemCategory"] for ppmp_item in ppmp_items if ppmp_item["ItemCategory"] not in (None, "", "NULL")]
-# in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").execute()
-# in_lieus = in_lieus.data
-# in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
-# in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
-# in_lieu_items = in_lieu_items.data
-# in_lieu_item_map = {}
-# for in_lieu_item in in_lieu_items:
-#     in_lieu_item_map[in_lieu_item["ItemID"]] = True
-# in_lieu_item_quantity = {}
-# for in_lieu_item in in_lieu_items:
-#     in_lieu_item_quantity[in_lieu_item["ItemID"]] = in_lieu_item["QuantityReduced"]
-# training_data = {}
-# for item_category in item_categories:
-#     planned_quantity = 0
-#     available_quantity = 0
-#     in_lieu_total_quantity = 0
-#     target_was_cut = False
-#     for ppmp_item in ppmp_items:
-#         try:
-#             if ppmp_item["ItemCategory"] == item_category:
-#                 planned_quantity += ppmp_item["PlannedQuantity"]
-#                 available_quantity += ppmp_item["AvailableQuantity"]
-#                 in_lieu_total_quantity += in_lieu_item_quantity[ppmp_item["ItemID"]]
-#         except KeyError:
-#             pass
-#     training_data[item_category] = {
-#         "ItemCategory": item_category,
-#         "PlannedQuantity": planned_quantity,
-#         "AvailableQuantity": available_quantity,
-#         "InLieuTotalQuantity": in_lieu_total_quantity,
-#         "TargetWasCut": in_lieu_total_quantity > 0,
-#     }
-#
+ppmp_items = private_supabase.table("PPMP_ITEM").select("*").execute()
+ppmp_items = ppmp_items.data
+ppmp_item_ids = [ppmp_item["ItemID"] for ppmp_item in ppmp_items]
+item_categories = [ppmp_item["ItemCategory"] for ppmp_item in ppmp_items if ppmp_item["ItemCategory"] not in (None, "", "NULL")]
+in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").execute()
+in_lieus = in_lieus.data
+in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
+in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
+in_lieu_items = in_lieu_items.data
+in_lieu_item_map = {}
+for in_lieu_item in in_lieu_items:
+    in_lieu_item_map[in_lieu_item["ItemID"]] = True
+in_lieu_item_quantity = {}
+for in_lieu_item in in_lieu_items:
+    in_lieu_item_quantity[in_lieu_item["ItemID"]] = in_lieu_item["QuantityReduced"]
+category_data = {}
+for item_category in item_categories:
+    planned_quantity = 0
+    available_quantity = 0
+    in_lieu_total_quantity = 0
+    target_was_cut = False
+    for ppmp_item in ppmp_items:
+        try:
+            if ppmp_item["ItemCategory"] == item_category:
+                planned_quantity += ppmp_item["PlannedQuantity"]
+                available_quantity += ppmp_item["AvailableQuantity"]
+                in_lieu_total_quantity += in_lieu_item_quantity[ppmp_item["ItemID"]]
+        except KeyError:
+            pass
+    category_data[item_category] = {
+        "ItemCategory": item_category,
+        "PlannedQuantity": planned_quantity,
+        "AvailableQuantity": available_quantity,
+        "InLieuTotalQuantity": in_lieu_total_quantity,
+        "TargetWasCut": in_lieu_total_quantity > 0,
+    }
+
 
 #
 # # RULE BASED
@@ -170,28 +170,63 @@ import pandas as pd
 # model = model(X_train, Y_train)
 # test(X_test, Y_test, model)
 
-legit_training_data = list(training_data.values())
-model, probabilities = lahat(legit_training_data)
-joblib.dump(model, "in_lieu_model.pkl")
-for i, item in enumerate(legit_training_data):
-    item["AI_Score"] = probabilities[i][1]
+training_data = {}
+for ppmp_item in ppmp_items:
+    try:
+        training_data[ppmp_item["ItemID"]] = {
+        "PlannedQuantity": ppmp_item["PlannedQuantity"],
+        "AvailableQuantity": ppmp_item["AvailableQuantity"],
+        "InLieuTotalQuantity": in_lieu_item_quantity[ppmp_item["ItemID"]],
+    }
+    except KeyError:
+        pass
+
+
+legit_training_data_list = list(training_data.values())
+category_data = list(category_data.values())
+# model, probabilities = lahat(legit_training_data)
+# joblib.dump(model, "in_lieu_model.pkl")
+category_probabilities = test(category_data)
+item_probabilities = test(legit_training_data_list)
+# print(item_probabilities)
+
+for i, category in enumerate(category_data):
+    category["AI_Score"] = category_probabilities[i][1]
+
+for i, item in enumerate(legit_training_data_list):
+    item["AI_Score"] = item_probabilities[i][1]
 #
-legit_training_data.sort(
+legit_training_data_list.sort(
     key=lambda x: x["AI_Score"],
     reverse=True
 )
 
 
-score_map = {
+category_score_map = {
     row["ItemCategory"]: row["AI_Score"]
-    for row in legit_training_data
+    for row in category_data
 }
 
-for ppmp_item in ppmp_items:
+item_score_map = {}
+for item_id, probability in zip(training_data.keys(), item_probabilities):
+    item_score_map[item_id] = probability[1]
 
-    ppmp_item["AI_Score"] = score_map.get(
-        ppmp_item["ItemCategory"],
-        0
+# for ppmp_item in ppmp_items:
+#     try:
+#         training_data[ppmp_item["ItemID"]] = {
+#
+#         "PlannedQuantity": ppmp_item["PlannedQuantity"],
+#         "AvailableQuantity": ppmp_item["AvailableQuantity"],
+#         "InLieuTotalQuantity": in_lieu_item_quantity[ppmp_item["ItemID"]],
+#     }
+#     except KeyError:
+#         pass
+
+
+for ppmp_item in ppmp_items:
+    ppmp_item["AI_Score"] = (
+            item_score_map.get(ppmp_item["ItemID"], 0)
+            + category_score_map.get(ppmp_item["ItemCategory"], 0)
     )
 
     ppmp_item["InLieuTotalQuantity"] = in_lieu_item_quantity.get(
@@ -211,8 +246,9 @@ ppmp_items.sort(
     reverse=True
 )
 
-
+print(len(ppmp_items))
 chosen = reverse_knapsack(ppmp_items, 100)
+print(len(chosen))
 
 rows = []
 for result in chosen:
@@ -224,8 +260,8 @@ df.to_excel("ml.xlsx", index=False)
 # from excel import testingPPMP
 # 
 # testingPPMP("PPMP.xlsx", 11, 1, 2, 15, 16)
-from smart_suggest.ml_suggestion import MLSuggest
-from api.utils import private_supabase
-
-ss = MLSuggest(private_supabase, '2026')
-ss.ml_self_train()
+# from smart_suggest.ml_suggestion import MLSuggest
+# from api.utils import private_supabase
+#
+# ss = MLSuggest(private_supabase, '2026')
+# ss.ml_self_train()

@@ -69,6 +69,18 @@ def lahat(training_rows):
     # print(probabilities)
     return probabilities
 
+def test(training_rows):
+    model = joblib.load("in_lieu_model.pkl")
+    df = pd.DataFrame(training_rows)
+    X = df[
+        [
+            "InLieuTotalQuantity",
+            "PlannedQuantity",
+            "AvailableQuantity",
+        ]
+    ]
+    return model.predict_proba(X)
+
 def reverse_knapsack(items, target_budget):
 
     model = cp_model.CpModel()
