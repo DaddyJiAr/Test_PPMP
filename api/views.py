@@ -514,10 +514,14 @@ def masterlist_data(request):
             "pendingQuantity": item["PendingQuantity"],
             "fulfilledQuantity": item["FulfilledQuantity"],
             "priceCatalog": item["PricePerUnit"],
+            "itemCategory": item["ItemCategory"],
+            "ppmpCategory": item["PpmpCategory"],
         }
         for item in response.data
     ]
-    return Response(data)
+    item_categories = get_item_categories()
+    ppmp_categories = get_ppmp_categories()
+    return Response({"ppmpData": data, "itemCategories": item_categories, "ppmpCategories": ppmp_categories})
 
 @api_view(['POST'])
 def masterlist_cards(request):
