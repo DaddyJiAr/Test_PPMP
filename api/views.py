@@ -1206,9 +1206,9 @@ def update_signatories(request):
 
 @api_view(['POST'])
 def test_ml(request):
-    # user = get_user(request)
-    # if user is None:
-    #     return Response({"error": "User not found"}, status=401)
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
     missing_fields = check_fields(["year", "targetBudget"], request)
     try:
         if missing_fields:
