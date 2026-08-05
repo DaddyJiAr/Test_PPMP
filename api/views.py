@@ -1,10 +1,12 @@
 import json
 
+from ortools.sat.python import cp_model
 from postgrest import APIError
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from datetime import datetime
 
+from ml import reverse_knapsack, test
 from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items
 from excel import testingPPMP, upload_excel, export_formatted_excel
@@ -1200,3 +1202,200 @@ def update_signatories(request):
     except Exception as e:
         return Response({"error": "Error updating signatories", "signatoryId": signatory_id, "err": f"{e}"}, status=500)
     return Response({"status": "success"}, status=200)
+
+
+@api_view(['POST'])
+def test_ml(request):
+    # user = get_user(request)
+    # if user is None:
+    #     return Response({"error": "User not found"}, status=401)
+    missing_fields = check_fields(["year", "targetBudget"], request)
+    try:
+        if missing_fields:
+            return Response({"error": "Missing fields", "missingFields": missing_fields}, status=400)
+    except Exception as e:
+        return Response({"error": "Invalid fields"}, status=400)
+    year = request.POST["year"]
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).maybe_single().execute()
+    if fiscal_year is None:
+        return Response({"errpr": "Fiscal year not found"}, status=404)
+    fiscal_year_id = fiscal_year.data["FiscalYearID"]
+    target_budget = int(request.POST["targetBudget"])
+    ppmp_items = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year_id).execute()
+    ppmp_items = ppmp_items.data
+    ppmp_item_ids = [ppmp_item["ItemID"] for ppmp_item in ppmp_items]
+    item_categories = [ppmp_item["ItemCategory"] for ppmp_item in ppmp_items if
+                       ppmp_item["ItemCategory"] not in (None, "", "NULL")]
+    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").eq("FiscalYearID", fiscal_year_id).execute()
+    in_lieus = in_lieus.data
+    in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
+    in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
+    in_lieu_items = in_lieu_items.data
+    in_lieu_item_map = {}
+    for in_lieu_item in in_lieu_items:
+        in_lieu_item_map[in_lieu_item["ItemID"]] = True
+    in_lieu_item_quantity = {}
+    for in_lieu_item in in_lieu_items:
+        in_lieu_item_quantity[in_lieu_item["ItemID"]] = in_lieu_item["QuantityReduced"]
+    category_data = {}
+    for item_category in item_categories:
+        planned_quantity = 0
+        available_quantity = 0
+        in_lieu_total_quantity = 0
+        target_was_cut = False
+        for ppmp_item in ppmp_items:
+            try:
+                if ppmp_item["ItemCategory"] == item_category:
+                    planned_quantity += ppmp_item["PlannedQuantity"]
+                    available_quantity += ppmp_item["AvailableQuantity"]
+                    in_lieu_total_quantity += in_lieu_item_quantity[ppmp_item["ItemID"]]
+            except KeyError:
+                pass
+        category_data[item_category] = {
+            "ItemCategory": item_category,
+            "PlannedQuantity": planned_quantity,
+            "AvailableQuantity": available_quantity,
+            "InLieuTotalQuantity": in_lieu_total_quantity,
+            "TargetWasCut": in_lieu_total_quantity > 0,
+        }
+    ppmp_items = [ppmp_item for ppmp_item in ppmp_items if
+                  not (int(ppmp_item["PlannedQuantity"]) <= 0 or int(ppmp_item["AvailableQuantity"]) <= 0)]
+    training_data = {}
+    for ppmp_item in ppmp_items:
+        planned = int(ppmp_item["PlannedQuantity"])
+        available = int(ppmp_item["AvailableQuantity"])
+        if planned <= 0 or available <= 0:
+            print("Skipping:", ppmp_item["ItemID"], planned, available)
+            continue
+        print("Keeping:", ppmp_item["ItemID"])
+        try:
+            training_data[ppmp_item["ItemID"]] = {
+                "PlannedQuantity": planned,
+                "AvailableQuantity": available,
+                "InLieuTotalQuantity": in_lieu_item_quantity[ppmp_item["ItemID"]],
+            }
+        except KeyError:
+            training_data[ppmp_item["ItemID"]] = {
+                "PlannedQuantity": planned,
+                "AvailableQuantity": available,
+                "InLieuTotalQuantity": 0,
+            }
+
+    legit_training_data_list = list(training_data.values())
+    category_data = list(category_data.values())
+    # model, probabilities = lahat(legit_training_data)
+    # joblib.dump(model, "in_lieu_model.pkl")
+    category_probabilities = test(category_data)
+    item_probabilities = test(legit_training_data_list)
+    # print(item_probabilities)
+
+    for i, category in enumerate(category_data):
+        category["AI_Score"] = category_probabilities[i][1]
+
+    for i, item in enumerate(legit_training_data_list):
+        item["AI_Score"] = item_probabilities[i][1]
+    #
+    legit_training_data_list.sort(
+        key=lambda x: x["AI_Score"],
+        reverse=True
+    )
+
+    category_score_map = {
+        row["ItemCategory"]: row["AI_Score"]
+        for row in category_data
+    }
+
+    item_score_map = {}
+    for item_id, probability in zip(training_data.keys(), item_probabilities):
+        item_score_map[item_id] = probability[1]
+
+    for ppmp_item in ppmp_items:
+        ppmp_item["AI_Score"] = (
+                item_score_map.get(ppmp_item["ItemID"], 0)
+                + category_score_map.get(ppmp_item["ItemCategory"], 0)
+        )
+
+        ppmp_item["InLieuTotalQuantity"] = in_lieu_item_quantity.get(
+            ppmp_item["ItemID"],
+            0
+        )
+
+        ppmp_item["BudgetImpact"] = int(
+            round(
+                ppmp_item["PricePerUnit"] *
+                ppmp_item["PlannedQuantity"]
+            )
+        )
+
+    ppmp_items.sort(
+        key=lambda x: x["AI_Score"],
+        reverse=True
+    )
+
+    def optimized_reverse_knapsack(items_to_evaluate, target_cents):
+        model = cp_model.CpModel()
+        item_vars = []
+
+        # 1. Setup bounded variables (0 up to AvailableQuantity)
+        for i, item in enumerate(items_to_evaluate):
+            max_qty = int(item["AvailableQuantity"])
+            # This natively handles the volume without flattening!
+            var = model.NewIntVar(0, max_qty, f'item_{i}')
+            item_vars.append(var)
+
+        # 2. Add your custom Threshold Equality constraint (>= Budget)
+        # Using Centavo Scaling (x100)
+        model.Add(
+            sum(item_vars[i] * int(round(float(items_to_evaluate[i]["PricePerUnit"]) * 100)) for i in
+                range(len(items_to_evaluate))) >= target_cents
+        )
+
+        # 3. Objective: Prioritize items with the highest AI_Score
+        # (Multiply by 1000 to convert float percentages to pure integers for the solver)
+        model.Minimize(
+            sum(
+                item_vars[i] * int(
+                    round(
+                        (1.01 - items_to_evaluate[i]["AI_Score"]) * float(items_to_evaluate[i]["PricePerUnit"]) * 100))
+                for i in range(len(items_to_evaluate))
+            )
+        )
+
+        # 4. Run the solver with a strict fail-safe timeout
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = 10.0  # Will never hang your server!
+        status = solver.Solve(model)
+
+        # 5. Extract the exact quantities chosen
+        chosen = []
+        if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
+            for i, item in enumerate(items_to_evaluate):
+                qty_selected = solver.Value(item_vars[i])
+                if qty_selected > 0:
+                    result = item.copy()
+                    result["QuantityToReduce"] = qty_selected
+                    result["ReducedBudgetImpact"] = qty_selected * float(item["PricePerUnit"])
+                    chosen.append(result)
+        return chosen
+
+    # --- EXECUTE THE NEW SOLVER ---
+    print(f"Total Unique Items ready for Knapsack: {len(ppmp_items)}")
+
+    # Multiply by 100 for Centavo Scaling (e.g. 1000 becomes 100000)
+    target_budget_scaled = int(target_budget * 100)
+
+    # Pass the normal items directly to the new optimized function
+    final_results = optimized_reverse_knapsack(ppmp_items, target_budget_scaled)
+
+    print(f"Total Unique Items Selected: {len(final_results)}")
+    chosen_data = [
+        {
+            "itemId": chosen_item["ItemID"],
+            "itemName": chosen_item["ItemName"],
+            "unitMeasurement": chosen_item["UnitName"],
+            "reduceQuantity": chosen_item["QuantityToReduce"],
+            "priceCatalog": chosen_item["PricePerUnit"],
+        }
+        for chosen_item in final_results
+    ]
+    return Response({"inLieuData": chosen_data})

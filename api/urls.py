@@ -21,4 +21,5 @@ urlpatterns = [
     path('in_lieu_approval_status/', views.update_in_lieu_status),
     path('signatories/', views.get_signatories),
     path('update_signatories/', views.update_signatories),
+    path('test_ml/', views.test_ml),
 ]
