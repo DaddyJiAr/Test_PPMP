@@ -1425,14 +1425,6 @@ def test_ml(request):
     return Response({"inLieuData": chosen_data})
 
 
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-import joblib
-
-# Make sure this import matches your exact project structure
-from api.utils import private_supabase
-
-
 @api_view(['GET'])
 def get_importances(request):
     user = get_user(request)
