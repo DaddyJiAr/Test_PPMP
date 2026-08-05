@@ -1430,12 +1430,42 @@ def get_importances(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    feature_names = [
-        "PlannedQuantity",
-        "AvailableQuantity",
-        "InLieuTotalQuantity",
-    ]
 
-    model = joblib.load("in_lieu_model.pkl")
-    importances = dict(zip(feature_names, model.feature_importances_))
-    return Response(importances)
+    year = request.GET.get("year")
+    if not year:
+        return Response({"error": "Year query parameter is required"}, status=400)
+
+    try:
+        model = joblib.load("in_lieu_model.pkl")
+        importances = model.feature_importances_
+
+        card1_history_unutilized = round((importances[0] + importances[1]) * 100, 2)
+
+        card2_history_in_lieu = round(importances[2] * 100, 2)
+
+        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year",
+                                                                                      year).maybe_single().execute()
+
+        card3_live_unutilized = 0.00
+
+        if fiscal_year and fiscal_year.data:
+            fiscal_year_id = fiscal_year.data["FiscalYearID"]
+
+            ppmp_items = private_supabase.table("PPMP_ITEM").select("PlannedQuantity, AvailableQuantity").eq(
+                "FiscalYearID", fiscal_year_id).execute()
+
+            if ppmp_items and ppmp_items.data:
+                total_planned_live = sum(int(item.get("PlannedQuantity", 0)) for item in ppmp_items.data)
+                total_available_live = sum(int(item.get("AvailableQuantity", 0)) for item in ppmp_items.data)
+
+                if total_planned_live > 0:
+                    card3_live_unutilized = round((total_available_live / total_planned_live) * 100, 2)
+
+        return Response({
+            "notUtilizedItems": card1_history_unutilized,
+            "frequentInLieuItems": card2_history_in_lieu,
+            "notUtilizedCurrentYear": card3_live_unutilized
+        })
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
