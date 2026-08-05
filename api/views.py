@@ -1,5 +1,6 @@
 import json
 
+import joblib
 from ortools.sat.python import cp_model
 from postgrest import APIError
 from rest_framework.response import Response
@@ -1399,3 +1400,19 @@ def test_ml(request):
         for chosen_item in final_results
     ]
     return Response({"inLieuData": chosen_data})
+
+
+@api_view(['GET'])
+def get_importances(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
+    feature_names = [
+        "PlannedQuantity",
+        "AvailableQuantity",
+        "InLieuTotalQuantity",
+    ]
+
+    model = joblib.load("in_lieu_model.pkl")
+    importances = dict(zip(feature_names, model.feature_importances_))
+    return Response(importances)
