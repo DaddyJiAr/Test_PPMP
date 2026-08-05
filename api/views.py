@@ -1207,9 +1207,9 @@ def update_signatories(request):
 
 @api_view(['POST'])
 def test_ml(request):
-    user = get_user(request)
-    if user is None:
-        return Response({"error": "User not found"}, status=401)
+    # user = get_user(request)
+    # if user is None:
+    #     return Response({"error": "User not found"}, status=401)
     missing_fields = check_fields(["year", "targetBudget"], request)
     try:
         if missing_fields:
@@ -1221,7 +1221,7 @@ def test_ml(request):
     if fiscal_year is None:
         return Response({"errpr": "Fiscal year not found"}, status=404)
     fiscal_year_id = fiscal_year.data["FiscalYearID"]
-    target_budget = int(request.POST["targetBudget"])
+    target_budget = float(request.POST["targetBudget"])
     ppmp_items = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year_id).execute()
     ppmp_items = ppmp_items.data
     ppmp_item_ids = [ppmp_item["ItemID"] for ppmp_item in ppmp_items]
@@ -1259,8 +1259,13 @@ def test_ml(request):
             "InLieuTotalQuantity": in_lieu_total_quantity,
             "TargetWasCut": in_lieu_total_quantity > 0,
         }
+
     ppmp_items = [ppmp_item for ppmp_item in ppmp_items if
                   not (int(ppmp_item["PlannedQuantity"]) <= 0 or int(ppmp_item["AvailableQuantity"]) <= 0)]
+
+    # --- FIX #1: CREATE MAP EARLY FOR ACCURATE TRAINING DATA ---
+    category_history_map = {cat["ItemCategory"]: cat["InLieuTotalQuantity"] for cat in category_data.values()}
+
     training_data = {}
     for ppmp_item in ppmp_items:
         planned = int(ppmp_item["PlannedQuantity"])
@@ -1273,7 +1278,8 @@ def test_ml(request):
             training_data[ppmp_item["ItemID"]] = {
                 "PlannedQuantity": planned,
                 "AvailableQuantity": available,
-                "InLieuTotalQuantity": in_lieu_item_quantity[ppmp_item["ItemID"]],
+                "InLieuTotalQuantity": category_history_map.get(ppmp_item["ItemCategory"], 0),
+                # AI now learns from Category!
             }
         except KeyError:
             training_data[ppmp_item["ItemID"]] = {
@@ -1284,55 +1290,33 @@ def test_ml(request):
 
     legit_training_data_list = list(training_data.values())
     category_data = list(category_data.values())
-    # model, probabilities = lahat(legit_training_data)
-    # joblib.dump(model, "in_lieu_model.pkl")
-    category_probabilities = test(category_data)
-    item_probabilities = test(legit_training_data_list)
-    # print(item_probabilities)
-
-    for i, category in enumerate(category_data):
-        category["AI_Score"] = category_probabilities[i][1]
-
-    for i, item in enumerate(legit_training_data_list):
-        item["AI_Score"] = item_probabilities[i][1]
-    #
-    legit_training_data_list.sort(
-        key=lambda x: x["AI_Score"],
-        reverse=True
-    )
-
-    category_score_map = {
-        row["ItemCategory"]: row["AI_Score"]
-        for row in category_data
-    }
-
-    item_score_map = {}
-    for item_id, probability in zip(training_data.keys(), item_probabilities):
-        item_score_map[item_id] = probability[1]
-
+    live_scoring_data = []
     for ppmp_item in ppmp_items:
-        ppmp_item["AI_Score"] = (
-                item_score_map.get(ppmp_item["ItemID"], 0)
-                + category_score_map.get(ppmp_item["ItemCategory"], 0)
-        )
+        # Look up the CATEGORY volume, not the item ID volume
+        cat_history_volume = category_history_map.get(ppmp_item["ItemCategory"], 0)
 
-        ppmp_item["InLieuTotalQuantity"] = in_lieu_item_quantity.get(
-            ppmp_item["ItemID"],
-            0
-        )
+        live_scoring_data.append({
+            "PlannedQuantity": int(ppmp_item["PlannedQuantity"]),
+            "AvailableQuantity": int(ppmp_item["AvailableQuantity"]),
+            "InLieuTotalQuantity": cat_history_volume
+        })
 
-        ppmp_item["BudgetImpact"] = int(
-            round(
-                ppmp_item["PricePerUnit"] *
-                ppmp_item["PlannedQuantity"]
-            )
-        )
+    # Run the AI test exactly ONCE on the properly formatted live items
+    live_probabilities = test(live_scoring_data)
+
+    # Attach the correct AI score back to the main items
+    for i, ppmp_item in enumerate(ppmp_items):
+        # live_probabilities[i][1] is the chance (0.0 to 1.0) of being a good cut
+        ppmp_item["AI_Score"] = live_probabilities[i][1]
+        # Save the category volume for the UI
+        ppmp_item["InLieuTotalQuantity"] = category_history_map.get(ppmp_item["ItemCategory"], 0)
 
     ppmp_items.sort(
         key=lambda x: x["AI_Score"],
         reverse=True
     )
 
+    # --- OPTIMIZED INTEGER KNAPSACK FUNCTION ---
     def optimized_reverse_knapsack(items_to_evaluate, target_cents):
         model = cp_model.CpModel()
         item_vars = []
@@ -1383,7 +1367,7 @@ def test_ml(request):
     print(f"Total Unique Items ready for Knapsack: {len(ppmp_items)}")
 
     # Multiply by 100 for Centavo Scaling (e.g. 1000 becomes 100000)
-    target_budget_scaled = int(target_budget * 100)
+    target_budget_scaled = int(round(target_budget * 100))
 
     # Pass the normal items directly to the new optimized function
     final_results = optimized_reverse_knapsack(ppmp_items, target_budget_scaled)
