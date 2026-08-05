@@ -12,6 +12,7 @@ from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items
 from excel import testingPPMP, upload_excel, export_formatted_excel
 from smart_suggest.ml_suggestion import MLSuggest
+from ml import test
 
 def get_item_categories():
     response = private_supabase.rpc("get_item_categories").execute()
@@ -1443,28 +1444,59 @@ def get_importances(request):
 
         card2_history_in_lieu = round(importances[2] * 100, 2)
 
-        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year",
-                                                                                      year).maybe_single().execute()
+        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year",year).maybe_single().execute()
 
-        card3_live_unutilized = 0.00
+        card3_live_ai_confidence = 0.00
 
         if fiscal_year and fiscal_year.data:
             fiscal_year_id = fiscal_year.data["FiscalYearID"]
 
-            ppmp_items = private_supabase.table("PPMP_ITEM").select("PlannedQuantity, AvailableQuantity").eq(
-                "FiscalYearID", fiscal_year_id).execute()
+            ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID",fiscal_year_id).execute()
+            ppmp_items = ppmp_items_response.data
 
-            if ppmp_items and ppmp_items.data:
-                total_planned_live = sum(int(item.get("PlannedQuantity", 0)) for item in ppmp_items.data)
-                total_available_live = sum(int(item.get("AvailableQuantity", 0)) for item in ppmp_items.data)
+            if ppmp_items:
+                in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").eq("FiscalYearID", fiscal_year_id).execute().data
+                in_lieu_ids = [il["InLieuID"] for il in in_lieus] if in_lieus else []
 
-                if total_planned_live > 0:
-                    card3_live_unutilized = round((total_available_live / total_planned_live) * 100, 2)
+                in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("ItemID, QuantityReduced").in_("InLieuID",in_lieu_ids).execute().data if in_lieu_ids else []
+
+                in_lieu_item_quantity = {}
+                for il_item in in_lieu_items:
+                    in_lieu_item_quantity[il_item["ItemID"]] = il_item["QuantityReduced"]
+
+                category_history_map = {}
+                for item in ppmp_items:
+                    cat = item.get("ItemCategory")
+                    if cat and cat not in (None, "", "NULL"):
+                        if cat not in category_history_map:
+                            category_history_map[cat] = 0
+                        category_history_map[cat] += in_lieu_item_quantity.get(item["ItemID"], 0)
+
+                live_scoring_data = []
+                for item in ppmp_items:
+                    planned = int(item.get("PlannedQuantity", 0))
+                    available = int(item.get("AvailableQuantity", 0))
+
+                    if planned > 0 and available > 0:
+                        live_scoring_data.append({
+                            "PlannedQuantity": planned,
+                            "AvailableQuantity": available,
+                            "InLieuTotalQuantity": category_history_map.get(item.get("ItemCategory"), 0)
+                        })
+
+                if live_scoring_data:
+                    # Run the true ML engine
+                    live_probabilities = test(live_scoring_data)
+
+                    total_score = sum(prob[1] for prob in live_probabilities)
+                    average_score = total_score / len(live_probabilities)
+
+                    card3_live_ai_confidence = round(average_score * 100, 2)
 
         return Response({
             "notUtilizedItems": card1_history_unutilized,
             "frequentInLieuItems": card2_history_in_lieu,
-            "notUtilizedCurrentYear": card3_live_unutilized
+            "notUtilizedCurrentYear": card3_live_ai_confidence
         })
 
     except Exception as e:
