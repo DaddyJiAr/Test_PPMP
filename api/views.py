@@ -7,12 +7,11 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from datetime import datetime
 
-from ml import reverse_knapsack, test
+from ml import reverse_knapsack, get_ai_probabilities
 from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items
 from excel import testingPPMP, upload_excel, export_formatted_excel
 from smart_suggest.ml_suggestion import MLSuggest
-from ml import test
 
 import pandas as pd
 
@@ -1294,7 +1293,7 @@ def test_ml(request):
 
     df_live = pd.DataFrame(live_scoring_data, columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"])
 
-    live_probabilities = test(df_live)
+    live_probabilities = get_ai_probabilities(df_live)
 
     for i, ppmp_item in enumerate(ppmp_items):
         ppmp_item["AI_Score"] = live_probabilities[i][1]
@@ -1417,9 +1416,12 @@ def get_importances(request):
                         })
 
                 if live_scoring_data:
-                    df_live = pd.DataFrame(live_scoring_data)
+                    df_live = pd.DataFrame(
+                        live_scoring_data,
+                        columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"]
+                    )
 
-                    live_probabilities = test(df_live)
+                    live_probabilities = get_ai_probabilities(df_live)
 
                     total_score = sum(prob[1] for prob in live_probabilities)
                     average_score = total_score / len(live_probabilities)

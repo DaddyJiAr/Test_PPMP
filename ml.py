@@ -38,6 +38,14 @@ def test(X_test, Y_test, model):
     print(classification_report(Y_test, predictions))
     print(accuracy_score(Y_test, predictions))
 
+def get_ai_probabilities(live_data):
+    """
+    Used by the Django API to get real-time percentage scores
+    for the React frontend Knapsack engine.
+    """
+    model = joblib.load("in_lieu_model.pkl")
+    return model.predict_proba(live_data)
+
 def save_model(model):
     joblib.dump(model, "in_lieu_model.pkl")
 
