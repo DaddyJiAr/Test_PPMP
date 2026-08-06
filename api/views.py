@@ -14,6 +14,8 @@ from excel import testingPPMP, upload_excel, export_formatted_excel
 from smart_suggest.ml_suggestion import MLSuggest
 from ml import test
 
+import pandas as pd
+
 def get_item_categories():
     response = private_supabase.rpc("get_item_categories").execute()
     return response.data
@@ -1205,7 +1207,6 @@ def update_signatories(request):
         return Response({"error": "Error updating signatories", "signatoryId": signatory_id, "err": f"{e}"}, status=500)
     return Response({"status": "success"}, status=200)
 
-
 @api_view(['POST'])
 def test_ml(request):
     user = get_user(request)
@@ -1221,7 +1222,6 @@ def test_ml(request):
 
     year = request.POST["year"]
 
-    # FETCH FISCAL YEAR & TOTAL ABC
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("TotalABC, FiscalYearID").eq("Year",
                                                                                             year).single().execute()
     if fiscal_year is None or fiscal_year.data is None:
@@ -1235,68 +1235,39 @@ def test_ml(request):
     ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year_id).execute()
     ppmp_items = ppmp_items_response.data
 
-    # CALCULATE UNALLOCATED OPEN FUNDS
     allocated_funds = sum(
         float(item["PlannedQuantity"]) * float(item["PricePerUnit"])
         for item in ppmp_items
     )
     unallocated_funds_total = total_annual_budget - allocated_funds
 
-    ppmp_item_ids = [ppmp_item["ItemID"] for ppmp_item in ppmp_items]
-    item_categories = [ppmp_item["ItemCategory"] for ppmp_item in ppmp_items if
-                       ppmp_item["ItemCategory"] not in (None, "", "NULL")]
-
-    # QUERY IN_LIEU HISTORY USING FISCAL YEAR ID
     in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status", "approved").eq(
         "FiscalYearID", fiscal_year_id).execute()
     in_lieus = in_lieus.data
     in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
 
-    # SUM HISTORICAL OPEN FUNDS UTILIZED
     open_funds_history = sum(float(il.get("OpenFundsUtilized", 0) or 0) for il in in_lieus)
 
     in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
     in_lieu_items = in_lieu_items.data
 
-    in_lieu_item_map = {}
-    for in_lieu_item in in_lieu_items:
-        in_lieu_item_map[in_lieu_item["ItemID"]] = True
-
     in_lieu_item_quantity = {}
     for in_lieu_item in in_lieu_items:
-        in_lieu_item_quantity[in_lieu_item["ItemID"]] = in_lieu_item["QuantityReduced"]
+        item_id = str(in_lieu_item["ItemID"])
+        raw_qty = in_lieu_item.get("QuantityReduced")
+        qty = int(raw_qty) if raw_qty is not None else 0
 
-    category_data = {}
-    for item_category in item_categories:
-        planned_quantity = 0
-        available_quantity = 0
-        in_lieu_total_quantity = 0
-        for ppmp_item in ppmp_items:
-            try:
-                if ppmp_item["ItemCategory"] == item_category:
-                    planned_quantity += ppmp_item["PlannedQuantity"]
-                    available_quantity += ppmp_item["AvailableQuantity"]
-                    in_lieu_total_quantity += in_lieu_item_quantity.get(ppmp_item["ItemID"], 0)
-            except KeyError:
-                pass
-        category_data[item_category] = {
-            "ItemCategory": item_category,
-            "PlannedQuantity": planned_quantity,
-            "AvailableQuantity": available_quantity,
-            "InLieuTotalQuantity": in_lieu_total_quantity,
-            "TargetWasCut": in_lieu_total_quantity > 0,
-        }
+        in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
 
     ppmp_items = [ppmp_item for ppmp_item in ppmp_items if
                   not (int(ppmp_item["PlannedQuantity"]) <= 0 or int(ppmp_item["AvailableQuantity"]) <= 0)]
 
-    # --- INJECT OPEN FUNDS MOCK ITEM ---
     if unallocated_funds_total > 0:
         ppmp_items.append({
             "ItemID": 0,
             "ItemName": "Unallocated Open Funds",
             "UnitName": "PHP",
-            "PricePerUnit": 1.0,  # Price is 1 PHP per 1 PHP
+            "PricePerUnit": 1.0,
             "PlannedQuantity": int(unallocated_funds_total),
             "AvailableQuantity": int(unallocated_funds_total),
             "FiscalYearID": fiscal_year_id,
@@ -1305,81 +1276,48 @@ def test_ml(request):
             "InLieuTotalQuantity": open_funds_history
         })
 
-    # --- CREATE MAP EARLY FOR ACCURATE TRAINING DATA ---
-    category_history_map = {cat["ItemCategory"]: cat["InLieuTotalQuantity"] for cat in category_data.values()}
-
-    training_data = {}
-    for ppmp_item in ppmp_items:
-        # Skip ItemID 0 for the training dictionary to prevent KeyError
-        if ppmp_item["ItemID"] == 0:
-            continue
-
-        planned = int(ppmp_item["PlannedQuantity"])
-        available = int(ppmp_item["AvailableQuantity"])
-        if planned <= 0 or available <= 0:
-            continue
-
-        try:
-            training_data[ppmp_item["ItemID"]] = {
-                "PlannedQuantity": planned,
-                "AvailableQuantity": available,
-                "InLieuTotalQuantity": category_history_map.get(ppmp_item["ItemCategory"], 0),
-            }
-        except KeyError:
-            training_data[ppmp_item["ItemID"]] = {
-                "PlannedQuantity": planned,
-                "AvailableQuantity": available,
-                "InLieuTotalQuantity": 0,
-            }
-
     live_scoring_data = []
     for ppmp_item in ppmp_items:
-        # --- BYPASS CATEGORY FOR OPEN FUNDS ---
+        item_id_str = str(ppmp_item["ItemID"])
+
         if ppmp_item["ItemID"] == 0:
-            cat_history_volume = ppmp_item["InLieuTotalQuantity"]
+            item_history = ppmp_item["InLieuTotalQuantity"]
         else:
-            cat_history_volume = category_history_map.get(ppmp_item["ItemCategory"], 0)
+            item_history = in_lieu_item_quantity.get(item_id_str, 0)
+            ppmp_item["InLieuTotalQuantity"] = item_history
 
         live_scoring_data.append({
             "PlannedQuantity": int(ppmp_item["PlannedQuantity"]),
             "AvailableQuantity": int(ppmp_item["AvailableQuantity"]),
-            "InLieuTotalQuantity": cat_history_volume
+            "InLieuTotalQuantity": item_history
         })
 
-    # Run the AI test exactly ONCE on the properly formatted live items
-    live_probabilities = test(live_scoring_data)
+    df_live = pd.DataFrame(live_scoring_data, columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"])
 
-    # Attach the correct AI score back to the main items
+    live_probabilities = test(df_live)
+
     for i, ppmp_item in enumerate(ppmp_items):
         ppmp_item["AI_Score"] = live_probabilities[i][1]
-
-        # Save the volume for the UI, bypassing the zero ID
-        if ppmp_item["ItemID"] != 0:
-            ppmp_item["InLieuTotalQuantity"] = category_history_map.get(ppmp_item["ItemCategory"], 0)
 
     ppmp_items.sort(
         key=lambda x: x["AI_Score"],
         reverse=True
     )
 
-    # --- OPTIMIZED INTEGER KNAPSACK FUNCTION ---
     def optimized_reverse_knapsack(items_to_evaluate, target_cents):
         model = cp_model.CpModel()
         item_vars = []
 
-        # 1. Setup bounded variables (0 up to AvailableQuantity)
         for i, item in enumerate(items_to_evaluate):
             max_qty = int(item["AvailableQuantity"])
             var = model.NewIntVar(0, max_qty, f'item_{i}')
             item_vars.append(var)
 
-        # 2. Add your custom Threshold Equality constraint (>= Budget)
         model.Add(
             sum(item_vars[i] * int(round(float(items_to_evaluate[i]["PricePerUnit"]) * 100)) for i in
                 range(len(items_to_evaluate))) >= target_cents
         )
 
-        # 3. Objective: Minimize Penalty
         model.Minimize(
             sum(
                 item_vars[i] * int(
@@ -1389,12 +1327,10 @@ def test_ml(request):
             )
         )
 
-        # 4. Run the solver with a strict fail-safe timeout
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = 10.0
         status = solver.Solve(model)
 
-        # 5. Extract the exact quantities chosen
         chosen = []
         if status in [cp_model.OPTIMAL, cp_model.FEASIBLE]:
             for i, item in enumerate(items_to_evaluate):
@@ -1406,10 +1342,7 @@ def test_ml(request):
                     chosen.append(result)
         return chosen
 
-    # Multiply by 100 for Centavo Scaling
     target_budget_scaled = int(round(target_budget * 100))
-
-    # Pass the normal items directly to the new optimized function
     final_results = optimized_reverse_knapsack(ppmp_items, target_budget_scaled)
 
     chosen_data = [
@@ -1441,39 +1374,38 @@ def get_importances(request):
         importances = model.feature_importances_
 
         card1_history_unutilized = round((importances[0] + importances[1]) * 100, 2)
-
         card2_history_in_lieu = round(importances[2] * 100, 2)
 
-        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year",year).maybe_single().execute()
+        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year",
+                                                                                      year).maybe_single().execute()
 
         card3_live_ai_confidence = 0.00
 
         if fiscal_year and fiscal_year.data:
             fiscal_year_id = fiscal_year.data["FiscalYearID"]
 
-            ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID",fiscal_year_id).execute()
+            ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID",
+                                                                                     fiscal_year_id).execute()
             ppmp_items = ppmp_items_response.data
 
             if ppmp_items:
-                in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").eq("FiscalYearID", fiscal_year_id).execute().data
+                in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").eq(
+                    "FiscalYearID", fiscal_year_id).execute().data
                 in_lieu_ids = [il["InLieuID"] for il in in_lieus] if in_lieus else []
 
-                in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("ItemID, QuantityReduced").in_("InLieuID",in_lieu_ids).execute().data if in_lieu_ids else []
+                in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("ItemID, QuantityReduced").in_("InLieuID",
+                                                                                                             in_lieu_ids).execute().data if in_lieu_ids else []
 
                 in_lieu_item_quantity = {}
                 for il_item in in_lieu_items:
-                    in_lieu_item_quantity[il_item["ItemID"]] = il_item["QuantityReduced"]
-
-                category_history_map = {} 
-                for item in ppmp_items:
-                    cat = item.get("ItemCategory")
-                    if cat and cat not in (None, "", "NULL"):
-                        if cat not in category_history_map:
-                            category_history_map[cat] = 0
-                        category_history_map[cat] += in_lieu_item_quantity.get(item["ItemID"], 0)
+                    item_id = str(il_item["ItemID"])
+                    raw_qty = il_item.get("QuantityReduced")
+                    qty = int(raw_qty) if raw_qty is not None else 0
+                    in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
 
                 live_scoring_data = []
                 for item in ppmp_items:
+                    item_id = str(item.get("ItemID"))
                     planned = int(item.get("PlannedQuantity", 0))
                     available = int(item.get("AvailableQuantity", 0))
 
@@ -1481,12 +1413,13 @@ def get_importances(request):
                         live_scoring_data.append({
                             "PlannedQuantity": planned,
                             "AvailableQuantity": available,
-                            "InLieuTotalQuantity": category_history_map.get(item.get("ItemCategory"), 0)
+                            "InLieuTotalQuantity": in_lieu_item_quantity.get(item_id, 0)
                         })
 
                 if live_scoring_data:
-                    # Run the true ML engine
-                    live_probabilities = test(live_scoring_data)
+                    df_live = pd.DataFrame(live_scoring_data)
+
+                    live_probabilities = test(df_live)
 
                     total_score = sum(prob[1] for prob in live_probabilities)
                     average_score = total_score / len(live_probabilities)
