@@ -1207,16 +1207,6 @@ def update_signatories(request):
         return Response({"error": "Error updating signatories", "signatoryId": signatory_id, "err": f"{e}"}, status=500)
     return Response({"status": "success"}, status=200)
 
-
-import pandas as pd
-from rest_framework.response import Response
-from rest_framework.decorators import api_view
-from ortools.sat.python import cp_model
-from api.utils import private_supabase
-
-
-# Assuming joblib, get_user, check_fields, test are imported here
-
 @api_view(['POST'])
 def test_ml(request):
     user = get_user(request)
