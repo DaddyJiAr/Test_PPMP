@@ -1447,6 +1447,9 @@ def get_importances(request):
 
 @api_view(['POST'])
 def retrain_ml(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
     # ml retrain using actual items
 
     print("--- 1. FETCHING STRICTLY APPROVED DATA ---")
