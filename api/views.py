@@ -1464,7 +1464,7 @@ def get_importances(request):
                 for il_item in in_lieu_items:
                     in_lieu_item_quantity[il_item["ItemID"]] = il_item["QuantityReduced"]
 
-                category_history_map = {}
+                category_history_map = {} 
                 for item in ppmp_items:
                     cat = item.get("ItemCategory")
                     if cat and cat not in (None, "", "NULL"):
