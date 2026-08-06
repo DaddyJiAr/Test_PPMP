@@ -689,6 +689,8 @@ def procurement_data(request):
             "availableQuantity": item["AvailableQuantity"],
             "pendingQuantity": item["PendingQuantity"],
             "fulfilledQuantity": item["FulfilledQuantity"],
+            "itemCategory": item["ItemCategory"],
+            "ppmpCategory": item["PpmpCategory"],
             "priceCatalog": item["PricePerUnit"],
             "prHistory": [
                 {
@@ -706,11 +708,15 @@ def procurement_data(request):
         }
         for item in ppmp_items.data
     ]
+    item_categories = get_item_categories()
+    ppmp_categories = get_ppmp_categories()
     return Response({"totalPlannedItemCount": total_planned_item_count,
                      "totalAvailableItemCount": total_available_item_count,
                      "totalPendingItemCount": total_pending_item_count,
                      "totalFulfilledItemCount": total_fulfilled_item_count,
-                     "ppmpMonitoringData": data
+                     "ppmpMonitoringData": data,
+                     "itemCategories": item_categories,
+                     "ppmpCategories": ppmp_categories,
                      })
 
 @api_view(['POST'])
