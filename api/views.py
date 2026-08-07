@@ -1444,88 +1444,52 @@ def get_importances(request):
         return Response({"error": str(e)}, status=500)
 
 
-
 @api_view(['POST'])
 def retrain_ml(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    # ml retrain using actual items
 
-    print("--- 1. FETCHING STRICTLY APPROVED DATA ---")
-
-    # Fetch all items
-    ppmp_items_response = private_supabase.table("PPMP_ITEM").select("ItemID, PlannedQuantity, AvailableQuantity").execute()
+    ppmp_items_response = private_supabase.table("PPMP_ITEM").select(
+        "ItemID, PlannedQuantity, AvailableQuantity").execute()
     ppmp_items = ppmp_items_response.data
 
-    # Fetch strictly approved In Lieu records
     in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").execute()
     in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus.data]
 
-    print("--- 2. AGGREGATING IN LIEU TOTALS ---")
     in_lieu_item_quantity = {}
 
     if in_lieu_ids:
         in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("ItemID, QuantityReduced").in_("InLieuID",
-                                                                                                 in_lieu_ids).execute()
-
-    for item in in_lieu_items.data:
-        # Force the ItemID to be a string to guarantee perfect duplicate matching
-        item_id = str(item["ItemID"])
-
-        # Force the quantity to be an integer for safe math
-        raw_qty = item.get("QuantityReduced")
-        qty = int(raw_qty) if raw_qty is not None else 0
-
-        # Sum the quantities if the item was cut multiple times
-        in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
-
-    print("--- 3. BUILDING THE RAW DATASET ---")
+                                                                                                     in_lieu_ids).execute()
+        for item in in_lieu_items.data:
+            item_id = str(item["ItemID"])
+            raw_qty = item.get("QuantityReduced")
+            qty = int(raw_qty) if raw_qty is not None else 0
+            in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
 
     X_train_raw = []
     Y_train = []
-    validation_rows = []  # Keeping this so you can still check the Excel export
 
     for item in ppmp_items:
         item_id = str(item.get("ItemID"))
         planned = int(item.get("PlannedQuantity", 0))
         available = int(item.get("AvailableQuantity", 0))
 
-        # Get the correctly summed total (or 0 if none)
         in_lieu_qty = in_lieu_item_quantity.get(item_id, 0)
-
-        # Y Variable: 1 if cut, 0 if not
         target_was_cut = 1 if in_lieu_qty > 0 else 0
 
-        # Only include valid baselines
         if planned > 0:
-            # X Variable strictly math array
             X_train_raw.append([planned, available, in_lieu_qty])
-
-            # Y Variable the answer key
             Y_train.append(target_was_cut)
 
-            # Save for your human-readable Excel check
-            validation_rows.append({
-                "ItemID": item_id,
-                "PlannedQuantity": planned,
-                "AvailableQuantity": available,
-                "InLieuTotalQuantity": in_lieu_qty,
-                "TargetWasCut": target_was_cut
-            })
+    X_train_named = pd.DataFrame(
+        X_train_raw,
+        columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"]
+    )
 
-        print("--- 4. BINDING LIVE VARIABLE NAMES ---")
-        # Convert the nameless Python list into a Pandas DataFrame with strict column headers
-        X_train_named = pd.DataFrame(
-            X_train_raw,
-            columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"]
-        )
+    trained_ai = model(X_train_named, Y_train)
 
-        print("--- 5. TRAINING AND SAVING THE AI ---")
-        # Pass the NAMED dataframe into your backend dev's model function
-        trained_ai = model(X_train_named, Y_train)
+    save_model(trained_ai)
 
-        # Save the updated brain directly to your project
-        save_model(trained_ai)
-        print("SUCCESS! The named, mathematically accurate model has been saved to 'in_lieu_model.pkl'.")
     return Response({"status": "success"}, status=200)
