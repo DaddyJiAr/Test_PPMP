@@ -764,29 +764,35 @@ def create_in_lieu_request(request):
     in_lieu_addition = payload["itemsToProcure"]
     open_funds_utilized = payload["openFundsUtilized"]
     budget_impact = payload["requiredBudget"]
+    year = payload["year"]
     status = "Pending"
     user_id = user["UserID"]
     fiscal_year_id = 0
-    if len(in_lieu_items) > 0:
-        ppmp_item_id = in_lieu_items[0]["itemId"]
-        ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
-        fiscal_year_id = ppmp_item.data["FiscalYearID"]
-    else:
-        current_year = datetime.now().year
-        fiscal_year = None
-        for current_year in range(current_year, current_year - 3, -1):
-            print(current_year)
-            fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", current_year).maybe_single().execute()
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).maybe_single().execute()
+    if fiscal_year is None:
+        return Response({"error": "Fiscal year missing"},status=401)
+    fiscal_year_id = fiscal_year.data["FiscalYearID"]
 
-            if fiscal_year is None:
-                continue
-
-            print(fiscal_year.data)
-            break
-        if not fiscal_year or not fiscal_year.data:
-            return Response({"error": "Fiscal year missing"},status=401)
-
-        fiscal_year_id = fiscal_year.data["FiscalYearID"]
+    # if len(in_lieu_items) > 0:
+    #     ppmp_item_id = in_lieu_items[0]["itemId"]
+    #     ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
+    #     fiscal_year_id = ppmp_item.data["FiscalYearID"]
+    # else:
+    #     current_year = datetime.now().year
+    #     fiscal_year = None
+    #     for current_year in range(current_year, current_year - 3, -1):
+    #         print(current_year)
+    #         fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", current_year).maybe_single().execute()
+    #
+    #         if fiscal_year is None:
+    #             continue
+    #
+    #         print(fiscal_year.data)
+    #         break
+    #     if not fiscal_year or not fiscal_year.data:
+    #         return Response({"error": "Fiscal year missing"},status=401)
+    #
+    #     fiscal_year_id = fiscal_year.data["FiscalYearID"]
     response = private_supabase.table("IN_LIEU").insert({
         "BudgetImpact": budget_impact,
         "Status": status,
