@@ -980,7 +980,9 @@ def update_in_lieu_status(request):
 
     in_lieu_id = request.POST.get("inLieuId")
     status = request.POST.get("status")
-    year = request.POST.get("year")
+    in_lieu = private_supabase.table("IN_LIEU").select("*").eq("InLieuID", in_lieu_id).single().execute()
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", in_lieu.data["FiscalYearID"]).maybe_single().execute()
+    year = fiscal_year.data["FiscalYearID"]
     budget_impact = 0
     if status == "Rejected":
         return reject_in_lieu(user, in_lieu_id, year)
@@ -995,7 +997,7 @@ def reject_in_lieu(user, in_lieu_id, year):
         budget_impact = in_lieu.data["BudgetImpact"]
         in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").eq("InLieuID", in_lieu_id).execute()
         in_lieu_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").eq("InLieuID", in_lieu_id).execute()
-        fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).maybe_single().execute()
+        fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", year).maybe_single().execute()
         if fiscal_year is None:
             return Response({"error": "Fiscal year missing"}, status=401)
         # if len(in_lieu_items.data) > 0:
@@ -1071,7 +1073,7 @@ def approve_in_lieu(user, in_lieu_id, year):
                                  in_lieu_addition["ItemID"]]
     fiscal_year = None
     fiscal_year_id = 0
-    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).maybe_single().execute()
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", year).maybe_single().execute()
     if fiscal_year is None:
         return Response({"error": "Fiscal year missing"}, status=401)
     fiscal_year_id = fiscal_year.data["FiscalYearID"]
