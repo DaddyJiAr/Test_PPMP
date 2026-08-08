@@ -980,13 +980,14 @@ def update_in_lieu_status(request):
 
     in_lieu_id = request.POST.get("inLieuId")
     status = request.POST.get("status")
+    year = request.POST.get("year")
     budget_impact = 0
     if status == "Rejected":
-        return reject_in_lieu(user, in_lieu_id)
+        return reject_in_lieu(user, in_lieu_id, year)
     else:
-        return approve_in_lieu(user, in_lieu_id)
+        return approve_in_lieu(user, in_lieu_id, year)
 
-def reject_in_lieu(user, in_lieu_id):
+def reject_in_lieu(user, in_lieu_id, year):
     budget_impact = 0
     status = "Rejected"
     try:
@@ -994,16 +995,19 @@ def reject_in_lieu(user, in_lieu_id):
         budget_impact = in_lieu.data["BudgetImpact"]
         in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").eq("InLieuID", in_lieu_id).execute()
         in_lieu_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").eq("InLieuID", in_lieu_id).execute()
-        if len(in_lieu_items.data) > 0:
-            ppmp_item_id = in_lieu_items.data[0]["ItemID"]
-            ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
-            fiscal_year_id = ppmp_item.data["FiscalYearID"]
-            fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", fiscal_year_id).single().execute()
-        else:
-            current_year = datetime.now().year
-            fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", current_year).single().execute()
-            if not fiscal_year.data:
-                return Response({"error": "Fiscal year missing"}, status=401)
+        fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).maybe_single().execute()
+        if fiscal_year is None:
+            return Response({"error": "Fiscal year missing"}, status=401)
+        # if len(in_lieu_items.data) > 0:
+        #     ppmp_item_id = in_lieu_items.data[0]["ItemID"]
+        #     ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
+        #     fiscal_year_id = ppmp_item.data["FiscalYearID"]
+        #     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", fiscal_year_id).single().execute()
+        # else:
+        #     current_year = datetime.now().year
+        #     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", current_year).single().execute()
+        #     if not fiscal_year.data:
+        #         return Response({"error": "Fiscal year missing"}, status=401)
         response = private_supabase.table("IN_LIEU").update({"Status": status}).eq("InLieuID", in_lieu_id).execute()
         year = fiscal_year.data["Year"]
         status = status.lower()
@@ -1048,7 +1052,7 @@ def reject_in_lieu(user, in_lieu_id):
     except APIError:
         return Response({"error": "InLieu not found", "InLieuID": in_lieu_id}, status=404)
 
-def approve_in_lieu(user, in_lieu_id):
+def approve_in_lieu(user, in_lieu_id, year):
     budget_impact = 0
     status = "Approved"
     try:
@@ -1067,17 +1071,21 @@ def approve_in_lieu(user, in_lieu_id):
                                  in_lieu_addition["ItemID"]]
     fiscal_year = None
     fiscal_year_id = 0
-    if len(in_lieu_items) > 0:
-        ppmp_item_id = in_lieu_items[0]["ItemID"]
-        ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
-        fiscal_year_id = ppmp_item.data["FiscalYearID"]
-        fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", fiscal_year_id).single().execute()
-    else:
-        current_year = datetime.now().year
-        fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", current_year).single().execute()
-        if not fiscal_year.data:
-            return Response({"error": "Fiscal year missing"}, status=401)
-        fiscal_year_id = fiscal_year.data["FiscalYearID"]
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).maybe_single().execute()
+    if fiscal_year is None:
+        return Response({"error": "Fiscal year missing"}, status=401)
+    fiscal_year_id = fiscal_year.data["FiscalYearID"]
+    # if len(in_lieu_items) > 0:
+    #     ppmp_item_id = in_lieu_items[0]["ItemID"]
+    #     ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
+    #     fiscal_year_id = ppmp_item.data["FiscalYearID"]
+    #     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", fiscal_year_id).single().execute()
+    # else:
+    #     current_year = datetime.now().year
+    #     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", current_year).single().execute()
+    #     if not fiscal_year.data:
+    #         return Response({"error": "Fiscal year missing"}, status=401)
+    # fiscal_year_id = fiscal_year.data["FiscalYearID"]
 
     in_lieu_item_map = {}
     for in_lieu_item in in_lieu_items:
