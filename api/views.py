@@ -773,9 +773,19 @@ def create_in_lieu_request(request):
         fiscal_year_id = ppmp_item.data["FiscalYearID"]
     else:
         current_year = datetime.now().year
-        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", current_year).single().execute()
-        if not fiscal_year.data:
-            return Response({"error": "Fiscal year missing"}, status=401)
+        fiscal_year = None
+        for current_year in range(current_year, current_year - 3, -1):
+            print(current_year)
+            fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", current_year).maybe_single().execute()
+
+            if fiscal_year is None:
+                continue
+
+            print(fiscal_year.data)
+            break
+        if not fiscal_year or not fiscal_year.data:
+            return Response({"error": "Fiscal year missing"},status=401)
+
         fiscal_year_id = fiscal_year.data["FiscalYearID"]
     response = private_supabase.table("IN_LIEU").insert({
         "BudgetImpact": budget_impact,
