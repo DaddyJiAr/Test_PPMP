@@ -1124,8 +1124,10 @@ def approve_in_lieu(user, in_lieu_id, year):
         if quantity_to_add is None:
             return Response({"error": "Quantity not found"}, status=404)
         quantity_to_add = quantity_to_add.data["Quantity"]
+        planned_quantity = get_item_detail(in_lieu_addition_id["ItemID"], "PlannedQuantity")
         available_quantity = get_item_detail(in_lieu_addition_id["ItemID"], "AvailableQuantity")
         private_supabase.table("PPMP_ITEM").update({
+            "PlannedQuantity": planned_quantity + quantity_to_add,
             "AvailableQuantity": available_quantity + quantity_to_add,
         }).eq("ItemID", in_lieu_addition_id["ItemID"]).execute()
 
