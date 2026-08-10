@@ -6,6 +6,9 @@ from sklearn.ensemble import RandomForestClassifier
 import pandas as pd
 from ortools.sat.python import cp_model
 
+from api.utils import private_supabase
+
+
 def get_x_y(training_rows):
     df = pd.DataFrame(training_rows)
     X = df[
@@ -39,12 +42,11 @@ def test(X_test, Y_test, model):
     print(accuracy_score(Y_test, predictions))
 
 def get_ai_probabilities(live_data):
-    """
-    Used by the Django API to get real-time percentage scores
-    for the React frontend Knapsack engine.
-    """
-    model = joblib.load("in_lieu_model.pkl")
-    return model.predict_proba(live_data)
+    data = private_supabase.storage.from_("in_lieu_model").download("in_lieu_model.pkl")
+    with open("/tmp/in_lieu_model.pkl", "wb") as f:
+        f.write(data)
+    database_model = joblib.load("/tmp/in_lieu_model.pkl")
+    return database_model.predict_proba(live_data)
 
 def save_model(model):
     joblib.dump(model, "in_lieu_model.pkl")

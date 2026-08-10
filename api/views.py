@@ -1513,9 +1513,14 @@ def retrain_ml(request):
         X_train_raw,
         columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"]
     )
-
     trained_ai = model(X_train_named, Y_train)
+    save_model(trained_ai) #save locally
 
-    save_model(trained_ai)
+    with open("in_lieu_model.pkl", "rb") as f:
+        private_supabase.storage.from_("in_lieu_model").upload( #then upload local file to db
+            "in_lieu_model.pkl",
+            f,
+            {"upsert": "true"} #override
+        )
 
     return Response({"status": "success"}, status=200)
