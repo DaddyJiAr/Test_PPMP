@@ -1155,7 +1155,7 @@ def approve_in_lieu(user, in_lieu_id, year):
     for item in in_lieu_items:
         item_id = item["ItemID"]
         item_name = item["ItemName"]
-        quantity_reduced = in_lieu_item_map.get(item_id)  # Get matching quantity
+        quantity_reduced = in_lieu_item_map[item_id]["QuantityReduced"]  # Get matching quantity
 
         create_procurement_log(
             "In Lieu",
