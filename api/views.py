@@ -1401,8 +1401,11 @@ def get_importances(request):
         return Response({"error": "Year query parameter is required"}, status=400)
 
     try:
-        model = joblib.load("in_lieu_model.pkl")
-        importances = model.feature_importances_
+        data = private_supabase.storage.from_("in_lieu_model").download("in_lieu_model.pkl")
+        with open("/tmp/in_lieu_model.pkl", "wb") as f:
+            f.write(data)
+        database_model = joblib.load("/tmp/in_lieu_model.pkl")
+        importances = database_model.feature_importances_
 
         card1_history_unutilized = round((importances[0] + importances[1]) * 100, 2)
         card2_history_in_lieu = round(importances[2] * 100, 2)
