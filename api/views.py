@@ -1485,6 +1485,8 @@ def retrain_ml(request):
     ppmp_items_response = private_supabase.table("PPMP_ITEM").select(
         "ItemID, PlannedQuantity, AvailableQuantity").execute()
     ppmp_items = ppmp_items_response.data
+    for i in range (len(ppmp_items)):
+        ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
 
     in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").execute()
     in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus.data]
