@@ -1483,7 +1483,7 @@ def retrain_ml(request):
         return Response({"error": "User not found"}, status=401)
 
     ppmp_items_response = private_supabase.table("PPMP_ITEM").select(
-        "ItemID, PlannedQuantity, AvailableQuantity").execute()
+        "*").execute()
     ppmp_items = ppmp_items_response.data
     for i in range (len(ppmp_items)):
         ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
