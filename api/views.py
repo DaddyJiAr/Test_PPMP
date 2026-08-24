@@ -1307,9 +1307,15 @@ def test_ml(request):
             "InLieuTotalQuantity": open_funds_history
         })
 
-    for i in range (len(ppmp_items)):
-        ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + in_lieu_item_quantity[ppmp_items[i]["ItemID"]]
-
+    for i in range(len(ppmp_items)):
+        try:
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
+                                               in_lieu_item_quantity[
+                                                   ppmp_items[i]["ItemID"]] if raw_qty is not None else 0
+        except KeyError as e:
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
     live_scoring_data = []
     for ppmp_item in ppmp_items:
         item_id_str = str(ppmp_item["ItemID"])
