@@ -1265,7 +1265,8 @@ def test_ml(request):
 
     ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year_id).execute()
     ppmp_items = ppmp_items_response.data
-
+    ppmp_items = [ppmp_item for ppmp_item in ppmp_items if
+                  not (int(ppmp_item["PlannedQuantity"]) <= 0 or int(ppmp_item["AvailableQuantity"]) <= 0)]
     allocated_funds = sum(
         float(item["PlannedQuantity"]) * float(item["PricePerUnit"])
         for item in ppmp_items
@@ -1290,8 +1291,7 @@ def test_ml(request):
 
         in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
 
-    ppmp_items = [ppmp_item for ppmp_item in ppmp_items if
-                  not (int(ppmp_item["PlannedQuantity"]) <= 0 or int(ppmp_item["AvailableQuantity"]) <= 0)]
+
 
     if unallocated_funds_total > 0:
         ppmp_items.append({
@@ -1306,6 +1306,9 @@ def test_ml(request):
             "PpmpCategory": None,
             "InLieuTotalQuantity": open_funds_history
         })
+
+    for i in range (len(ppmp_items)):
+        ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
 
     live_scoring_data = []
     for ppmp_item in ppmp_items:
