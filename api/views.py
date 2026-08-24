@@ -1308,7 +1308,7 @@ def test_ml(request):
         })
 
     for i in range (len(ppmp_items)):
-        ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
+        ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + in_lieu_item_quantity[ppmp_items[i]["ItemID"]]
 
     live_scoring_data = []
     for ppmp_item in ppmp_items:
@@ -1478,16 +1478,32 @@ def get_importances(request):
 
 @api_view(['POST'])
 def retrain_ml(request):
-    user = get_user(request)
-    if user is None:
-        return Response({"error": "User not found"}, status=401)
+    # user = get_user(request)
+    # if user is None:
+    #     return Response({"error": "User not found"}, status=401)
+
+    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status", "approved").execute()
+    in_lieus = in_lieus.data
+    in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
+    in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
+    in_lieu_items = in_lieu_items.data
+
+    in_lieu_item_quantity = {}
+    for in_lieu_item in in_lieu_items:
+        item_id = str(in_lieu_item["ItemID"])
+        raw_qty = in_lieu_item.get("QuantityReduced")
+        qty = int(raw_qty) if raw_qty is not None else 0
+
+        in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
 
     ppmp_items_response = private_supabase.table("PPMP_ITEM").select(
         "*").execute()
     ppmp_items = ppmp_items_response.data
     for i in range (len(ppmp_items)):
-        ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
+        ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + in_lieu_item_quantity[ppmp_items[i]["ItemID"]]
 
+    for i in range(len(ppmp_items)):
+        print(ppmp_items[i]["ItemName"], ppmp_items[i]["PlannedQuantity"])
     in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").execute()
     in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus.data]
 
