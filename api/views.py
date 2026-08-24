@@ -1293,12 +1293,12 @@ def test_ml(request):
 
     for i in range(len(ppmp_items)):
         try:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
                                                in_lieu_item_quantity[
                                                    ppmp_items[i]["ItemID"]] if raw_qty is not None else 0
         except KeyError as e:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
 
     if unallocated_funds_total > 0:
@@ -1609,12 +1609,13 @@ def tester(request):
 
     for i in range(len(ppmp_items)):
         try:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
                                                in_lieu_item_quantity[
                                                    ppmp_items[i]["ItemID"]] if raw_qty is not None else 0
+            print(ppmp_items[i]["ItemName"], ppmp_items[i]["PlannedQuantity"])
         except KeyError as e:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
-
+            print(ppmp_items[i]["ItemName"], ppmp_items[i]["PlannedQuantity"])
         return Response({"status": "success"}, status=200)
