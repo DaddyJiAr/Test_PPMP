@@ -1478,9 +1478,9 @@ def get_importances(request):
 
 @api_view(['POST'])
 def retrain_ml(request):
-    # user = get_user(request)
-    # if user is None:
-    #     return Response({"error": "User not found"}, status=401)
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
 
     in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status", "approved").execute()
     in_lieus = in_lieus.data
@@ -1500,7 +1500,14 @@ def retrain_ml(request):
         "*").execute()
     ppmp_items = ppmp_items_response.data
     for i in range (len(ppmp_items)):
-        ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + in_lieu_item_quantity[ppmp_items[i]["ItemID"]]
+        try:
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
+                                               in_lieu_item_quantity[
+                                                   ppmp_items[i]["ItemID"]] if raw_qty is not None else 0
+        except KeyError as e:
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
 
     for i in range(len(ppmp_items)):
         print(ppmp_items[i]["ItemName"], ppmp_items[i]["PlannedQuantity"])
