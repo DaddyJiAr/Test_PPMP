@@ -1240,9 +1240,9 @@ def update_signatories(request):
 
 @api_view(['POST'])
 def test_ml(request):
-    user = get_user(request)
-    if user is None:
-        return Response({"error": "User not found"}, status=401)
+    # user = get_user(request)
+    # if user is None:
+    #     return Response({"error": "User not found"}, status=401)
 
     missing_fields = check_fields(["year", "targetBudget"], request)
     try:
@@ -1291,22 +1291,6 @@ def test_ml(request):
 
         in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
 
-
-
-    if unallocated_funds_total > 0:
-        ppmp_items.append({
-            "ItemID": 0,
-            "ItemName": "Unallocated Open Funds",
-            "UnitName": "PHP",
-            "PricePerUnit": 1.0,
-            "PlannedQuantity": int(unallocated_funds_total),
-            "AvailableQuantity": int(unallocated_funds_total),
-            "FiscalYearID": fiscal_year_id,
-            "ItemCategory": None,
-            "PpmpCategory": None,
-            "InLieuTotalQuantity": open_funds_history
-        })
-
     for i in range(len(ppmp_items)):
         try:
             ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
@@ -1316,6 +1300,23 @@ def test_ml(request):
         except KeyError as e:
             ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
+
+    if unallocated_funds_total > 0:
+        ppmp_items.append({
+            "ItemID": 0,
+            "ItemName": "Unallocated Open Funds",
+            "UnitName": "PHP",
+            "PricePerUnit": 1.0,
+            "PlannedQuantity": int(unallocated_funds_total),
+            "AvailableQuantity": int(unallocated_funds_total),
+            "PendingQuantity": 0,
+            "FulfilledQuantity": 0,
+            "FiscalYearID": fiscal_year_id,
+            "ItemCategory": None,
+            "PpmpCategory": None,
+            "InLieuTotalQuantity": open_funds_history
+        })
+
     live_scoring_data = []
     for ppmp_item in ppmp_items:
         item_id_str = str(ppmp_item["ItemID"])
@@ -1561,3 +1562,59 @@ def retrain_ml(request):
         )
 
     return Response({"status": "success"}, status=200)
+
+
+@api_view(['POST'])
+def tester(request):
+    ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", 37).execute()
+    ppmp_items = ppmp_items_response.data
+    ppmp_items = [ppmp_item for ppmp_item in ppmp_items if
+                  not (int(ppmp_item["PlannedQuantity"]) <= 0 or int(ppmp_item["AvailableQuantity"]) <= 0)]
+    allocated_funds = sum(
+        float(item["PlannedQuantity"]) * float(item["PricePerUnit"])
+        for item in ppmp_items
+    )
+
+    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status", "approved").eq(
+        "FiscalYearID", 37).execute()
+    in_lieus = in_lieus.data
+    in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
+
+    open_funds_history = sum(float(il.get("OpenFundsUtilized", 0) or 0) for il in in_lieus)
+
+    in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
+    in_lieu_items = in_lieu_items.data
+
+    in_lieu_item_quantity = {}
+    for in_lieu_item in in_lieu_items:
+        item_id = str(in_lieu_item["ItemID"])
+        raw_qty = in_lieu_item.get("QuantityReduced")
+        qty = int(raw_qty) if raw_qty is not None else 0
+
+        in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
+
+    # if unallocated_funds_total > 0:
+    #     ppmp_items.append({
+    #         "ItemID": 0,
+    #         "ItemName": "Unallocated Open Funds",
+    #         "UnitName": "PHP",
+    #         "PricePerUnit": 1.0,
+    #         "PlannedQuantity": int(unallocated_funds_total),
+    #         "AvailableQuantity": int(unallocated_funds_total),
+    #         "FiscalYearID": fiscal_year_id,
+    #         "ItemCategory": None,
+    #         "PpmpCategory": None,
+    #         "InLieuTotalQuantity": open_funds_history
+    #     })
+
+    for i in range(len(ppmp_items)):
+        try:
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
+                                               in_lieu_item_quantity[
+                                                   ppmp_items[i]["ItemID"]] if raw_qty is not None else 0
+        except KeyError as e:
+            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
+                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
+
+        return Response({"status": "success"}, status=200)

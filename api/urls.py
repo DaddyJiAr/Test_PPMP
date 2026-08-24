@@ -24,4 +24,5 @@ urlpatterns = [
     path('test_ml/', views.test_ml),
     path('get_importances/', views.get_importances),
     path('retrain_ml/', views.retrain_ml),
+    path('tester/', views.tester),
 ]
