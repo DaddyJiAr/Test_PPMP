@@ -1511,7 +1511,7 @@ def retrain_ml(request):
             ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
                                                in_lieu_item_quantity[
-                                                   ppmp_items[i]["ItemID"]] if raw_qty is not None else 0
+                                                   str(ppmp_items[i]["ItemID"])] if raw_qty is not None else 0
         except KeyError as e:
             ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
