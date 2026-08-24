@@ -1296,7 +1296,7 @@ def test_ml(request):
             ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
                                                in_lieu_item_quantity[
-                                                   ppmp_items[i]["ItemID"]] if raw_qty is not None else 0
+                                                   str(ppmp_items[i]["ItemID"])] if not None else 0
         except KeyError as e:
             ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
@@ -1587,6 +1587,8 @@ def tester(request):
 
     in_lieu_item_quantity = {}
     for in_lieu_item in in_lieu_items:
+        if in_lieu_item["ItemID"] == 6074:
+            print(in_lieu_item)
         item_id = str(in_lieu_item["ItemID"])
         raw_qty = in_lieu_item.get("QuantityReduced")
         qty = int(raw_qty) if raw_qty is not None else 0
@@ -1607,15 +1609,22 @@ def tester(request):
     #         "InLieuTotalQuantity": open_funds_history
     #     })
 
+    # print(len(ppmp_items))
     for i in range(len(ppmp_items)):
+        if ppmp_items[i]["ItemID"] == 6074:
+            print(ppmp_items[i])
+            print(in_lieu_item_quantity[str(ppmp_items[i]["ItemID"])])
+        # print(ppmp_items[i]["ItemID"])
         try:
             ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
                                                in_lieu_item_quantity[
-                                                   ppmp_items[i]["ItemID"]] if raw_qty is not None else 0
-            print(ppmp_items[i]["ItemName"], ppmp_items[i]["PlannedQuantity"])
+                                                   str(ppmp_items[i]["ItemID"])] if not None else 0
         except KeyError as e:
             ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
                                                ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
-            print(ppmp_items[i]["ItemName"], ppmp_items[i]["PlannedQuantity"])
-        return Response({"status": "success"}, status=200)
+        finally:
+            pass
+            # print(ppmp_items[i]["ItemName"], ppmp_items[i]["PlannedQuantity"])
+
+    return Response({"status": in_lieu_item_quantity["6074"]}, status=200)
