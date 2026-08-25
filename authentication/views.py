@@ -95,6 +95,9 @@ def forgot_password(request):
     except Exception as e:
         return Response({"error": "Invalid fields"}, status=400)
     email = request.POST["email"]
+    email_db = private_supabase.table("USER").select("*").eq("Email", email).maybe_single().execute()
+    if email_db is not None:
+        return Response({"error": f"No email for: {email} is registered"}, status=404)
     try:
         private_supabase.auth.reset_password_for_email(email, {"redirect_to": "https://cict-ppmp.vercel.app/reset-password"})
     except AuthApiError as e:
