@@ -385,12 +385,12 @@ def upload(request):
 
 @api_view(['POST'])
 def export(request):
-    user = get_user(request)
-    if user is None:
-        return Response({"error": "User not found"}, status=401)
+    # user = get_user(request)
+    # if user is None:
+    #     return Response({"error": "User not found"}, status=401)
     year = request.POST["year"]
     options = request.POST["options"]
-    create_procurement_log("PPMP", "export", year, user["FullName"], "")
+    create_procurement_log("PPMP", "export", year, "JIAR", "")
     return export_formatted_excel(year, options, get_admin())
 
 @api_view(['GET'])
