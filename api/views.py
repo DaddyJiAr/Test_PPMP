@@ -389,9 +389,9 @@ def export(request):
     if user is None:
         return Response({"error": "User not found"}, status=401)
     year = request.POST["year"]
-
+    options = request.POST["options"]
     create_procurement_log("PPMP", "export", year, user["FullName"], "")
-    return export_formatted_excel(year, get_admin())
+    return export_formatted_excel(year, options, get_admin())
 
 @api_view(['GET'])
 def fiscal_years(request):
@@ -1240,9 +1240,9 @@ def update_signatories(request):
 
 @api_view(['POST'])
 def test_ml(request):
-    # user = get_user(request)
-    # if user is None:
-    #     return Response({"error": "User not found"}, status=401)
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
 
     missing_fields = check_fields(["year", "targetBudget"], request)
     try:

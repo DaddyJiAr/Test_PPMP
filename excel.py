@@ -1,3 +1,5 @@
+import calendar
+import datetime
 from time import time
 
 from django.http.response import HttpResponse
@@ -7,6 +9,8 @@ import pandas as pd
 from api.utils import private_supabase
 from api.views import get_ppmp_items
 from rest_framework.response import Response
+
+
 
 def is_empty_or_zero(value):
     return pd.isna(value) or value == 0
@@ -62,6 +66,8 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
             if "subtotal" in name.lower() or "total" in name.lower():
                 continue
             current_category = name
+            print(current_category)
+            print(_)
             continue
         elif(
             pd.notna(row[name_column-1])
@@ -72,6 +78,8 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
             if "subtotal" in name.lower() or "total" in name.lower():
                 continue
             current_category = name
+            print(current_category)
+            print(_)
             continue
         if (
             pd.notna(description)
@@ -163,12 +171,37 @@ def upload_excel(df, total_ABC, year, ppmp_category="Office Supply"):
     except TypeError as e:
         return e
 
-def export_formatted_excel(year, dean_name):
-    wb = Workbook()
-    ws = wb.active
-    ws.sheet_view.showGridLines = False
+def export_formatted_excel(year, options, dean_name):
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).maybe_single().execute()
+    if not fiscal_year.data:
+        return Response({"error": "Fiscal year missing"},status=404)
+    fiscal_year = fiscal_year.data["FiscalYearID"]
     title = "CICT-PPMP-" + year
-    ws.title = title
+    want_revised = "revised_ppmp" in options
+    want_supplemental = "supplemental_ppmp" in options
+    want_in_lieus = "in_lieus" in options
+    want_purchase_requests = "purchase_requests" in options
+    want_dashboard_report = "dashboard_report" in options
+    wb = Workbook()
+    default_ws = wb.active
+
+    if want_revised: add_revised(wb, year, title, dean_name)
+    if want_supplemental: add_supplemental()
+    if want_in_lieus: add_in_lieus(wb, fiscal_year)
+
+    if default_ws.title == "Sheet" and len(wb.worksheets) > 1:
+        wb.remove(default_ws)
+
+    response = HttpResponse(
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    response["Content-Disposition"] = f'attachment; filename="{title}.xlsx"'
+    wb.save(response)
+    return response
+
+def add_revised(wb, year, title, dean_name):
+    ws = wb.create_sheet(title)
+    ws.sheet_view.showGridLines = False
     default_font = Font(name="Arial", size=10)
     total_count = 0
     grand_total_amount = 0
@@ -193,10 +226,10 @@ def export_formatted_excel(year, dean_name):
         end_column,
     ) = set_header(ws, current_column, current_row, year)
     ppmp_items = get_ppmp_items(year)
-    print(ppmp_items.data)
 
     office_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Office Supply"]
-    lab_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Laboratory Supply/Equipment"]
+    lab_supplies = [ppmp_item for ppmp_item in ppmp_items.data if
+                    ppmp_item["PpmpCategory"] == "Laboratory Supply/Equipment"]
 
     office_categories = [ppmp_item["ItemCategory"] for ppmp_item in office_supplies]
     office_categories = list(dict.fromkeys(office_categories))
@@ -250,7 +283,6 @@ def export_formatted_excel(year, dean_name):
 
     lab_supplies = lab_supplies_dict
 
-
     # return Response({"Office": office_supplies, "Lab": lab_supplies})
     # display subtotal per category
     # sa subtotal price per cat = 0.00
@@ -261,7 +293,8 @@ def export_formatted_excel(year, dean_name):
 
     ws[f"{num_to_letter(current_column)}{current_row}"] = "OFFICE SUPPLIES"
     ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
-    set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None, col_end=current_column + 1)
+    set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
+                       col_end=current_column + 1)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
 
     start_row = current_row
@@ -283,17 +316,18 @@ def export_formatted_excel(year, dean_name):
     ws[f"{num_to_letter(current_column)}{current_row}"] = "GRAND TOTAL:"
     ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
     set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", underline="single")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",
+                       underline="single")
 
     current_column = 16
     ws[f"{num_to_letter(current_column)}{current_row}"] = total_count
     set_border_to_cell(ws, current_column, current_row)
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
 
     current_column += 2
     ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
     set_border_to_cell(ws, current_column, current_row)
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
     gray_fill = PatternFill(
         fill_type="solid",
         start_color="A6A6A6",
@@ -320,13 +354,33 @@ def export_formatted_excel(year, dean_name):
         row_end=end_row
     )
 
-    response = HttpResponse(
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    response["Content-Disposition"] = f'attachment; filename="{title}.xlsx"'
-    wb.save(response)
-    return response
+def add_supplemental():
+    pass
 
+def add_in_lieus(wb, fiscal_year):
+    in_liues = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year).execute()
+    if not in_liues.data:
+        return Response({"error": "No In Lieus Found"},status=404)
+    in_liues = in_liues.data
+    for in_liue in in_liues:
+        in_lieu_date = pd.to_datetime(in_liue["created_at"])
+        default_title = f"In Lieu as of {calendar.month_name[in_lieu_date.month]} {in_lieu_date.day}"
+        ws_title = get_unique_sheet_title(wb, default_title)
+
+        ws = wb.create_sheet(ws_title)
+
+        in_lieu_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").eq("InLieuID", in_liue["InLieuID"]).execute()
+        in_lieu_additions = in_lieu_additions.data
+        in_lieu_item = private_supabase.table("IN_LIEU_ITEM").select("*").eq("InLieuID", in_liue["InLieuID"]).execute()
+        if not in_lieu_item.data:
+            ws.merge_cells(f"A{1}:R{1}")
+            ws[f"A{1}"] = "WALA HAHHAHAHAHHA"
+
+def add_purchase_requests():
+    pass
+
+def add_dashboard_reports():
+    pass
 
 
 def num_to_letter(num):
@@ -510,7 +564,7 @@ def set_signatories(ws, current_column, current_row, dean_name):
     ws[f"{num_to_letter(current_column)}{current_row}"] = "4. "
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center",)
     current_column += 1
-    ws[f"{num_to_letter(current_column)}{current_row}"] = "The drop down list in column B may help guide the preparer of this PPMP to find the items needed by the colleges and offices. Nonetheless, the prepaper may manually search in the Catalogue Sheet of this PPMP form."
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "The drop down list in column B may help guide the preparer of this PPMP to find the items needed by the colleges and offices. Nonetheless, the prepare may manually search in the Catalogue Sheet of this PPMP form."
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
 
     current_row += 1
@@ -698,3 +752,13 @@ def ppmp_item_category(ppmp_category, ws, current_row):
         set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
 
     return total_count, grand_total_amount, current_row
+
+def get_unique_sheet_title(wb, title):
+    if title not in wb.sheetnames:
+        return title
+
+    count = 1
+    while f"{title} ({count})" in wb.sheetnames:
+        count += 1
+
+    return f"{title} ({count})"
