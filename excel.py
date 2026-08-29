@@ -187,7 +187,7 @@ def export_formatted_excel(year, options, dean_name):
 
     if want_revised: add_revised(wb, year, title, dean_name)
     if want_supplemental: add_supplemental()
-    if want_in_lieus: add_in_lieus(wb, fiscal_year, year)
+    if want_in_lieus: add_in_lieus(wb, fiscal_year, year, dean_name)
 
     if default_ws.title == "Sheet" and len(wb.worksheets) > 1:
         wb.remove(default_ws)
@@ -328,6 +328,8 @@ def add_revised(wb, year, title, dean_name):
     ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
     set_border_to_cell(ws, current_column, current_row)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+
     gray_fill = PatternFill(
         fill_type="solid",
         start_color="A6A6A6",
@@ -339,7 +341,10 @@ def add_revised(wb, year, title, dean_name):
 
     end_row = current_row
 
-    current_column, current_row = set_signatories(ws, current_column, current_row, dean_name)
+    current_column, current_row = set_revised_signatories(ws, current_column, current_row, dean_name)
+
+
+    # set formats
 
     set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
     set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
@@ -357,12 +362,13 @@ def add_revised(wb, year, title, dean_name):
 def add_supplemental():
     pass
 
-def add_in_lieus(wb, fiscal_year, year):
+def add_in_lieus(wb, fiscal_year, year, dean_name):
     in_liues = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year).execute()
     if not in_liues.data:
         return Response({"error": "No In Lieus Found"},status=404)
     in_liues = in_liues.data
     for in_liue in in_liues:
+        open_funds_utilized = in_liue["OpenFundsUtilized"]
         in_lieu_date = pd.to_datetime(in_liue["created_at"])
         default_title = f"In Lieu as of {calendar.month_name[in_lieu_date.month]} {in_lieu_date.day}"
         ws_title = get_unique_sheet_title(wb, default_title)
@@ -371,8 +377,18 @@ def add_in_lieus(wb, fiscal_year, year):
 
         in_lieu_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").eq("InLieuID", in_liue["InLieuID"]).execute()
         in_lieu_additions = in_lieu_additions.data
-        in_lieu_item = private_supabase.table("IN_LIEU_ITEM").select("*").eq("InLieuID", in_liue["InLieuID"]).execute()
-
+        in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("QuantityReduced, ItemID").eq("InLieuID", in_liue["InLieuID"]).execute()
+        ppmp_items = {}
+        if in_lieu_items.data:
+            in_lieu_items = in_lieu_items.data
+            in_lieu_item_ids = [in_lieu_item["ItemID"] for in_lieu_item in in_lieu_items]
+            ppmp_items_response = private_supabase.table("PPMP_ITEM").select("ItemID, ItemName, PricePerUnit").in_("ItemID", in_lieu_item_ids).execute()
+            ppmp_items = {
+                item["ItemID"]: item
+                for item in (ppmp_items_response.data or [])
+            }
+        else:
+            in_lieu_items = []
         if not in_lieu_additions:
             return Response({"error": "No In Lieu Found"}, status=404)
 
@@ -408,8 +424,49 @@ def add_in_lieus(wb, fiscal_year, year):
             end_column,
         ) = set_in_lieu_headers(ws, current_column, current_row)
 
+        start_row = current_row
         current_column = 1
         current_row = add_in_lieu_additions(in_lieu_additions, ws, current_row)
+        end_row = current_row
+        print("END ROW", end_row)
+        set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
+        set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
+
+        current_column, current_row = set_dimensions(ws, current_column, current_row)
+
+        set_border_to_cell(
+            ws,
+            col_start=start_column,
+            row_start=start_row,
+            col_end=end_column,
+            row_end=end_row
+        )
+
+        (
+            current_column,
+            current_row,
+            start_number_column,
+            end_number_column,
+            start_decimal_column,
+            end_decimal_column,
+            end_column,
+        ) = add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, current_row)
+
+        end_row = current_row
+        set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
+        set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
+
+        current_column, current_row = set_dimensions(ws, current_column, current_row)
+
+        set_border_to_cell(
+            ws,
+            col_start=start_column,
+            row_start=start_row,
+            col_end=end_column,
+            row_end=end_row
+        )
+
+        set_in_lieu_signatories(ws, current_column, current_row, dean_name)
 
 
 def add_purchase_requests():
@@ -654,7 +711,7 @@ def set_in_lieu_headers(ws, current_column, current_row):
         end_column,
     )
 
-def set_signatories(ws, current_column, current_row, dean_name):
+def set_revised_signatories(ws, current_column, current_row, dean_name):
 
     current_row += 2
     current_column = 1
@@ -796,6 +853,108 @@ def set_signatories(ws, current_column, current_row, dean_name):
 
     return current_column, current_row
 
+def set_in_lieu_signatories(ws, current_column, current_row, dean_name):
+    current_row += 2
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Submitted by: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center",)
+
+    current_column += 11
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Noted by: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    ppmp_signatories = private_supabase.table("DOCUMENT_SIGNATORY").select("*").eq("DocumentType", "REVISED PPMP").execute()
+    if ppmp_signatories is None:
+        return None
+
+    ppmp_signatories = ppmp_signatories.data
+
+    current_row += 4
+    current_column = 2
+    ws[f"{num_to_letter(current_column)}{current_row}"] = dean_name
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+
+    current_column += 2
+
+    head_asset = [
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Head, Asset Management Unit"
+    ]
+    if head_asset:
+        head_asset = head_asset[0]
+    else:
+        head_asset = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = head_asset
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+
+    current_column += 4
+
+    head_procurement = [
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Head, Procurement Unit"
+    ]
+    if head_procurement:
+        head_procurement = head_procurement[0]
+    else:
+        head_procurement = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = head_procurement
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+
+    current_column += 4
+
+    budget_officer = [
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Budget Officer"
+    ]
+    if budget_officer:
+        budget_officer = budget_officer[0]
+    else:
+        budget_officer = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = budget_officer
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+
+    current_row += 1
+    current_column = 2
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Dean, CICT"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_column += 2
+
+    head_asset = [
+        signatory["PositionTitle"] for signatory in ppmp_signatories if
+        signatory["PositionTitle"] == "Head, Asset Management Unit"
+    ]
+    if head_asset:
+        head_asset = head_asset[0]
+    else:
+        head_asset = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = head_asset
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_column += 4
+
+    head_procurement = [
+        signatory["PositionTitle"] for signatory in ppmp_signatories if
+        signatory["PositionTitle"] == "Head, Procurement Unit"
+    ]
+    if head_procurement:
+        head_procurement = head_procurement[0]
+    else:
+        head_procurement = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = head_procurement
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_column += 4
+
+    budget_officer = [
+        signatory["PositionTitle"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Budget Officer"
+    ]
+    if budget_officer:
+        budget_officer = budget_officer[0]
+    else:
+        budget_officer = None
+    ws[f"{num_to_letter(current_column)}{current_row}"] = budget_officer
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+
 def ppmp_item_category(ppmp_category, ws, current_row):
     total_count = 0
     grand_total_amount = 0
@@ -846,12 +1005,12 @@ def ppmp_item_category(ppmp_category, ws, current_row):
             current_column += 1
             ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["Price as per Catalogue"]
             set_border_to_cell(ws, current_column, current_row)
-            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center", wrap_text=True)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center", wrap_text=True)
 
             current_column += 1
             ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["TOTAL AMOUNT"]
             set_border_to_cell(ws, current_column, current_row)
-            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
             category_grand_total_amount += ppmp_item["TOTAL AMOUNT"]
             grand_total_amount += ppmp_item["TOTAL AMOUNT"]
 
@@ -908,7 +1067,7 @@ def add_in_lieu_additions(additions, ws, current_row):
         current_column += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = addition["GENERAL DESCRIPTION"]
         set_border_to_cell(ws, current_column, current_row)
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
 
         current_column += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = addition["UNIT OF MEASUREMENT"]
@@ -923,12 +1082,12 @@ def add_in_lieu_additions(additions, ws, current_row):
         current_column += 13
         ws[f"{num_to_letter(current_column)}{current_row}"] = addition["PRICE CATALOGUE"]
         set_border_to_cell(ws, current_column, current_row)
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
 
         current_column += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = addition["AMOUNT"]
         set_border_to_cell(ws, current_column, current_row)
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
 
     current_row += 1
     current_column = 1
@@ -946,9 +1105,119 @@ def add_in_lieu_additions(additions, ws, current_row):
     ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
     set_border_to_cell(ws, current_column, current_row)
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    gray_fill = PatternFill(
+        fill_type="solid",
+        start_color="D8D8D8",
+        end_color="D8D8D8"
+    )
+    for cell in ws[current_row]:
+        cell.fill = gray_fill
 
+    print("ETO ROW MO", current_column)
     return current_row
 
+
+def add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, current_row):
+    grand_total = 0
+
+    in_lieu_item_list = []
+    print("LIEU", type(in_lieu_items))
+    print(in_lieu_items)
+
+    print("PPMP", type(ppmp_items))
+    print(ppmp_items)
+    for in_lieu_item in in_lieu_items:
+        ppmp_item = ppmp_items.get(in_lieu_item["ItemID"])
+
+        if ppmp_item is None:
+            continue
+
+        in_lieu_item_list.append({
+            "ItemName": ppmp_item["ItemName"],
+            "PricePerUnit": ppmp_item["PricePerUnit"],
+            "QuantityReduced": in_lieu_item["QuantityReduced"],
+        })
+
+    current_row += 1
+    current_column = 2
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "in lieu of"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+    current_row += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Item"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Price as per catalogue"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    start_decimal_column = current_column
+
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Total"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    end_number_column = current_column
+    end_decimal_column = current_column
+    end_column = current_column
+
+    current_column = 1
+    start_number_column = current_column
+
+    for in_lieu_item in in_lieu_item_list:
+        current_row += 1
+        current_column = 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = in_lieu_item["QuantityReduced"]
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+
+        current_column += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = in_lieu_item["ItemName"]
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+
+        current_column += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = in_lieu_item["PricePerUnit"]
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+
+        current_column += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = float(in_lieu_item["QuantityReduced"]) * float(in_lieu_item["PricePerUnit"])
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+        grand_total += float(in_lieu_item["QuantityReduced"]) * float(in_lieu_item["PricePerUnit"])
+
+    if not in_lieu_items or not ppmp_items:
+        current_row += 1
+        current_column = 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = 1
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+
+        current_column += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "Open Funds"
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+
+        current_column += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = open_funds_utilized
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+
+        current_column += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = open_funds_utilized
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+        grand_total += open_funds_utilized
+
+    current_row += 1
+    current_column = 3
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL:"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center")
+
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center")
+
+    return (
+        current_column,
+        current_row,
+        start_number_column,
+        end_number_column,
+        start_decimal_column,
+        end_decimal_column,
+        end_column,
+    )
 
 def get_unique_sheet_title(wb, title):
     if title not in wb.sheetnames:
