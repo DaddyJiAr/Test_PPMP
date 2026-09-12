@@ -108,6 +108,52 @@ def login(request):
             status=500
         )
 
+import os
+import time
+import httpx
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+
+@api_view(['POST'])
+def test_supabase_login(request):
+    email = request.data.get("email")
+    password = request.data.get("password")
+
+    url = os.getenv("SUPABASE_URL")
+    anon_key = os.getenv("SUPABASE_ANON_KEY")
+
+    try:
+        start = time.time()
+
+        response = httpx.post(
+            f"{url}/auth/v1/token?grant_type=password",
+            headers={
+                "apikey": anon_key,
+                "Content-Type": "application/json",
+            },
+            json={
+                "email": email,
+                "password": password,
+            },
+            timeout=15,
+        )
+
+        elapsed = round(time.time() - start, 2)
+
+        return Response({
+            "success": True,
+            "status": response.status_code,
+            "elapsed": elapsed,
+            "body": response.text[:1000],
+        })
+
+    except Exception as e:
+        return Response({
+            "success": False,
+            "type": type(e).__name__,
+            "error": str(e),
+        })
+
 @api_view(['PUT'])
 def update_password(request):
     try:
