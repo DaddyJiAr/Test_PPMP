@@ -329,10 +329,3 @@
 # # df_val.to_excel(excel_filename, index=False)
 # #
 # # print(f"Exported {len(df_val)} rows to '{excel_filename}' for your manual review.")
-from Test_PPMP.api.utils import private_supabase
-
-print("hello")
-private_supabase.auth.signInWithPassword({
-  "santiagojr0212@gmail.com",
-  "Pogiako321!"
-})

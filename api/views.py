@@ -1563,65 +1563,65 @@ def retrain_ml(request):
 
     return Response({"status": "success"}, status=200)
 
-import time
-import httpx
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from django.conf import settings
-import os
-@api_view(['GET'])
-def tester(request):
-
-
-    url = os.getenv("SUPABASE_URL")
-
-    results = {
-        "supabase_url": url,
-    }
-
-    # Test 1: basic HTTPS connection
-    try:
-        start = time.time()
-
-        r = httpx.get(
-            url,
-            timeout=10,
-        )
-
-        results["root"] = {
-            "success": True,
-            "status": r.status_code,
-            "elapsed": round(time.time() - start, 2),
-        }
-
-    except Exception as e:
-        results["root"] = {
-            "success": False,
-            "type": type(e).__name__,
-            "error": str(e),
-        }
-
-    # Test 2: Supabase Auth endpoint
-    try:
-        start = time.time()
-
-        r = httpx.get(
-            f"{url}/auth/v1/health",
-            timeout=10,
-        )
-
-        results["auth"] = {
-            "success": True,
-            "status": r.status_code,
-            "elapsed": round(time.time() - start, 2),
-            "body": r.text[:500],
-        }
-
-    except Exception as e:
-        results["auth"] = {
-            "success": False,
-            "type": type(e).__name__,
-            "error": str(e),
-        }
-
-    return Response(results)
+# import time
+# import httpx
+# from rest_framework.decorators import api_view
+# from rest_framework.response import Response
+# from django.conf import settings
+# import os
+# @api_view(['GET'])
+# def tester(request):
+#
+#
+#     url = os.getenv("SUPABASE_URL")
+#
+#     results = {
+#         "supabase_url": url,
+#     }
+#
+#     # Test 1: basic HTTPS connection
+#     try:
+#         start = time.time()
+#
+#         r = httpx.get(
+#             url,
+#             timeout=10,
+#         )
+#
+#         results["root"] = {
+#             "success": True,
+#             "status": r.status_code,
+#             "elapsed": round(time.time() - start, 2),
+#         }
+#
+#     except Exception as e:
+#         results["root"] = {
+#             "success": False,
+#             "type": type(e).__name__,
+#             "error": str(e),
+#         }
+#
+#     # Test 2: Supabase Auth endpoint
+#     try:
+#         start = time.time()
+#
+#         r = httpx.get(
+#             f"{url}/auth/v1/health",
+#             timeout=10,
+#         )
+#
+#         results["auth"] = {
+#             "success": True,
+#             "status": r.status_code,
+#             "elapsed": round(time.time() - start, 2),
+#             "body": r.text[:500],
+#         }
+#
+#     except Exception as e:
+#         results["auth"] = {
+#             "success": False,
+#             "type": type(e).__name__,
+#             "error": str(e),
+#         }
+#
+#     return Response(results)
