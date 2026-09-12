@@ -9,7 +9,7 @@ from datetime import datetime
 
 from ml import reverse_knapsack, get_ai_probabilities, model, save_model
 from user.views import get_admin
-from .utils import private_supabase, get_user, check_fields, get_ppmp_items
+from .utils import private_supabase, get_user, check_fields, get_ppmp_items, public_supabase
 from excel import testingPPMP, upload_excel, export_formatted_excel
 from smart_suggest.ml_suggestion import MLSuggest
 import pandas as pd
@@ -1563,68 +1563,65 @@ def retrain_ml(request):
 
     return Response({"status": "success"}, status=200)
 
-
-@api_view(['POST'])
+import time
+import httpx
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from django.conf import settings
+import os
+@api_view(['GET'])
 def tester(request):
-    ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", 37).execute()
-    ppmp_items = ppmp_items_response.data
-    ppmp_items = [ppmp_item for ppmp_item in ppmp_items if
-                  not (int(ppmp_item["PlannedQuantity"]) <= 0 or int(ppmp_item["AvailableQuantity"]) <= 0)]
-    allocated_funds = sum(
-        float(item["PlannedQuantity"]) * float(item["PricePerUnit"])
-        for item in ppmp_items
-    )
 
-    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status", "approved").eq(
-        "FiscalYearID", 37).execute()
-    in_lieus = in_lieus.data
-    in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
 
-    open_funds_history = sum(float(il.get("OpenFundsUtilized", 0) or 0) for il in in_lieus)
+    url = os.getenv("SUPABASE_URL")
 
-    in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
-    in_lieu_items = in_lieu_items.data
+    results = {
+        "supabase_url": url,
+    }
 
-    in_lieu_item_quantity = {}
-    for in_lieu_item in in_lieu_items:
-        if in_lieu_item["ItemID"] == 6074:
-            print(in_lieu_item)
-        item_id = str(in_lieu_item["ItemID"])
-        raw_qty = in_lieu_item.get("QuantityReduced")
-        qty = int(raw_qty) if raw_qty is not None else 0
+    # Test 1: basic HTTPS connection
+    try:
+        start = time.time()
 
-        in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
+        r = httpx.get(
+            url,
+            timeout=10,
+        )
 
-    # if unallocated_funds_total > 0:
-    #     ppmp_items.append({
-    #         "ItemID": 0,
-    #         "ItemName": "Unallocated Open Funds",
-    #         "UnitName": "PHP",
-    #         "PricePerUnit": 1.0,
-    #         "PlannedQuantity": int(unallocated_funds_total),
-    #         "AvailableQuantity": int(unallocated_funds_total),
-    #         "FiscalYearID": fiscal_year_id,
-    #         "ItemCategory": None,
-    #         "PpmpCategory": None,
-    #         "InLieuTotalQuantity": open_funds_history
-    #     })
+        results["root"] = {
+            "success": True,
+            "status": r.status_code,
+            "elapsed": round(time.time() - start, 2),
+        }
 
-    # print(len(ppmp_items))
-    for i in range(len(ppmp_items)):
-        if ppmp_items[i]["ItemID"] == 6074:
-            print(ppmp_items[i])
-            print(in_lieu_item_quantity[str(ppmp_items[i]["ItemID"])])
-        # print(ppmp_items[i]["ItemID"])
-        try:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
-                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
-                                               in_lieu_item_quantity[
-                                                   str(ppmp_items[i]["ItemID"])] if not None else 0
-        except KeyError as e:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
-                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
-        finally:
-            pass
-            # print(ppmp_items[i]["ItemName"], ppmp_items[i]["PlannedQuantity"])
+    except Exception as e:
+        results["root"] = {
+            "success": False,
+            "type": type(e).__name__,
+            "error": str(e),
+        }
 
-    return Response({"status": in_lieu_item_quantity["6074"]}, status=200)
+    # Test 2: Supabase Auth endpoint
+    try:
+        start = time.time()
+
+        r = httpx.get(
+            f"{url}/auth/v1/health",
+            timeout=10,
+        )
+
+        results["auth"] = {
+            "success": True,
+            "status": r.status_code,
+            "elapsed": round(time.time() - start, 2),
+            "body": r.text[:500],
+        }
+
+    except Exception as e:
+        results["auth"] = {
+            "success": False,
+            "type": type(e).__name__,
+            "error": str(e),
+        }
+
+    return Response(results)
