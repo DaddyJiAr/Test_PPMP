@@ -34,27 +34,79 @@ def get_users(request):
 def login(request):
     req_fields = ['email', 'password']
     missing_fields = check_fields(req_fields, request)
+
+    if missing_fields:
+        return Response(
+            {
+                "error": "Required fields missing",
+                "missingFields": missing_fields
+            },
+            status=400
+        )
+
+    email = request.data.get('email')
+    password = request.data.get('password')
+
     try:
-        if missing_fields:
-            return Response({"error": "Required fields missing", "missingFields": missing_fields}, status=400)
-    except Exception as e:
-        return Response({"error": "Invalid fields"}, status=400)
-    email = request.POST['email']
-    password = request.POST['password']
-    try:
-        response = public_supabase.auth.sign_in_with_password({'email': email, 'password': password})
-        user = private_supabase.auth.get_user(response.session.access_token).user
-        user = private_supabase.table("USER").select("*").eq("UserID", user.id).single().execute()
-        if user.data["Status"] != "Active":
-            return Response({"error": "User status not set to active."}, status=401)
+        auth_response = public_supabase.auth.sign_in_with_password({
+            'email': email,
+            'password': password
+        })
+
+        if not auth_response.user or not auth_response.session:
+            return Response(
+                {"error": "Unable to create authentication session"},
+                status=401
+            )
+
+        auth_user = auth_response.user
+
+        user_response = (
+            private_supabase
+            .table("USER")
+            .select("*")
+            .eq("UserID", auth_user.id)
+            .single()
+            .execute()
+        )
+
+        if not user_response.data:
+            return Response(
+                {"error": "User profile not found"},
+                status=404
+            )
+
+        user = user_response.data
+
+        if user["Status"] != "Active":
+            return Response(
+                {"error": "User status not set to active."},
+                status=401
+            )
+
         return Response({
             "status": "success",
-            "access_token": response.session.access_token,
-            "refresh_token": response.session.refresh_token,
+            "access_token": auth_response.session.access_token,
+            "refresh_token": auth_response.session.refresh_token,
         })
-    except Exception as e:
-        return Response({"error": "Unauthorized. Error logging in.", "message": str(e),}, status=401)
 
+    except AuthApiError as e:
+        return Response(
+            {
+                "error": "Unauthorized. Error logging in.",
+                "message": str(e)
+            },
+            status=401
+        )
+
+    except Exception as e:
+        return Response(
+            {
+                "error": "Error logging in.",
+                "message": str(e)
+            },
+            status=500
+        )
 
 @api_view(['PUT'])
 def update_password(request):
