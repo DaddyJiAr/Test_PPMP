@@ -44,7 +44,6 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
         unit = row[unit_column]
         quantity = row[quantity_column]
         price = row[price_per_unit_column]
-        # print(row[name_column-1], description, unit, quantity, price)
         left = row[name_column - 1]
         right = row[name_column]
 
@@ -66,8 +65,6 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
             if "subtotal" in name.lower() or "total" in name.lower():
                 continue
             current_category = name
-            print(current_category)
-            print(_)
             continue
         elif(
             pd.notna(row[name_column-1])
@@ -78,8 +75,6 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
             if "subtotal" in name.lower() or "total" in name.lower():
                 continue
             current_category = name
-            print(current_category)
-            print(_)
             continue
         if (
             pd.notna(description)
@@ -188,6 +183,7 @@ def export_formatted_excel(year, options, dean_name):
     if want_revised: add_revised(wb, year, title, dean_name)
     if want_supplemental: add_supplemental()
     if want_in_lieus: add_in_lieus(wb, fiscal_year, year, dean_name)
+    if want_purchase_requests: add_purchase_request(wb, fiscal_year, year, dean_name)
 
     if default_ws.title == "Sheet" and len(wb.worksheets) > 1:
         wb.remove(default_ws)
@@ -349,7 +345,7 @@ def add_revised(wb, year, title, dean_name):
     set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
     set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
 
-    current_column, current_row = set_dimensions(ws, current_column, current_row)
+    set_revised_dimensions(ws)
 
     set_border_to_cell(
         ws,
@@ -365,7 +361,7 @@ def add_supplemental():
 def add_in_lieus(wb, fiscal_year, year, dean_name):
     in_liues = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year).execute()
     if not in_liues.data:
-        return Response({"error": "No In Lieus Found"},status=404)
+        return None
     in_liues = in_liues.data
     for in_liue in in_liues:
         open_funds_utilized = in_liue["OpenFundsUtilized"]
@@ -374,6 +370,7 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
         ws_title = get_unique_sheet_title(wb, default_title)
 
         ws = wb.create_sheet(ws_title)
+        ws.sheet_view.showGridLines = False
 
         in_lieu_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").eq("InLieuID", in_liue["InLieuID"]).execute()
         in_lieu_additions = in_lieu_additions.data
@@ -422,17 +419,14 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
             start_decimal_column,
             end_decimal_column,
             end_column,
-        ) = set_in_lieu_headers(ws, current_column, current_row)
+        ) = set_in_lieu_header(ws, current_column, current_row)
 
-        start_row = current_row
+        start_row = current_row + 1
         current_column = 1
         current_row = add_in_lieu_additions(in_lieu_additions, ws, current_row)
         end_row = current_row
-        print("END ROW", end_row)
         set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
         set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
-
-        current_column, current_row = set_dimensions(ws, current_column, current_row)
 
         set_border_to_cell(
             ws,
@@ -456,7 +450,7 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
         set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
         set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
 
-        current_column, current_row = set_dimensions(ws, current_column, current_row)
+        set_in_lieu_dimensions(ws)
 
         set_border_to_cell(
             ws,
@@ -469,8 +463,101 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
         set_in_lieu_signatories(ws, current_column, current_row, dean_name)
 
 
-def add_purchase_requests():
-    pass
+def add_purchase_request(wb, fiscal_year, year, dean_name):
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").eq("FiscalYearID", fiscal_year).execute()
+    if not purchase_requests.data:
+        return None
+    purchase_requests = purchase_requests.data
+    for purchase_request in purchase_requests:
+        purchase_request_date = pd.to_datetime(purchase_request["created_at"])
+
+        title_date = purchase_request_date.strftime('%m-%d-%Y')
+        purchase_request_date = purchase_request_date.strftime('%m/%d/%Y')
+
+        default_title = f"In Lieu as of {title_date}"
+        ws_title = get_unique_sheet_title(wb, default_title)
+
+        ws = wb.create_sheet(ws_title)
+        # ws.sheet_view.showGridLines = False
+
+        ppmp_item = private_supabase.table("PPMP_ITEM").select("*").eq("ItemID", purchase_request["ItemID"]).maybe_single().execute()
+        if not ppmp_item.data:
+            return None
+        ppmp_item = ppmp_item.data
+        purchase_request_dict = {
+            "Stock/ Property No.": 1,
+            "Unit": ppmp_item["UnitName"],
+            "Item Description": ppmp_item["ItemName"],
+            "Quantity": purchase_request["RequestQuantity"],
+            "Unit Cost": ppmp_item["PricePerUnit"],
+            "Total Cost": purchase_request["RequestQuantity"] * ppmp_item["PricePerUnit"]
+        }
+
+
+        total_count = 0
+        grand_total_amount = 0
+        start_row = 0
+        end_row = 0
+        start_column = 1
+        end_column = 0
+        start_number_column = 0
+        end_number_column = 0
+        start_decimal_column = 0
+        end_decimal_column = 0
+
+
+        current_row = 1
+        current_column = 1
+
+        ws.merge_cells(f"A{1}:G{1}")
+        ws[f"A{1}"] = "PURCHASE REQUEST"
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 16, True, False, "center", "center",)
+
+        current_row += 2
+        (
+            current_column,
+            current_row,
+            start_number_column,
+            end_number_column,
+            start_decimal_column,
+            end_decimal_column,
+            end_column,
+        ) = set_purchase_request_header(ws, current_column, current_row, purchase_request_date)
+
+        start_row = current_row
+        current_row = add_purchase_requests(purchase_request_dict, ws, current_row)
+        end_row = current_row
+
+        set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
+        set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
+
+        set_border_to_cell(
+            ws,
+            col_start=start_column,
+            row_start=start_row,
+            col_end=end_column,
+            row_end=end_row
+        )
+
+        current_row += 1
+        current_column = 1
+
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "Purpose: "
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+        current_column += 1
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 5)}{current_row}")
+        set_bottom_border(ws, current_column, current_row, col_end=current_column + 5)
+
+        current_row += 1
+        current_column = 2
+
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 5)}{current_row}")
+        set_bottom_border(ws, current_column, current_row, col_end=current_column + 5)
+        current_column = 1
+        current_row += 1
+        hide_cell(ws, current_row)
+
+        set_purchase_request_signatories(ws, current_column, current_row, dean_name, year)
 
 def add_dashboard_reports():
     pass
@@ -503,6 +590,17 @@ def set_border_to_cell(ws, col_start, row_start,
             )
             ws.cell(row=r, column=c).border = border
 
+def set_bottom_border(ws, col_start, row, col_end=None, style="thin"):
+    col_end = col_end or col_start
+
+    for c in range(col_start, col_end + 1):
+        ws.cell(row=row, column=c).border = Border(
+            bottom=Side(style=style)
+        )
+
+def hide_cell(ws, current_row):
+    ws.row_dimensions[current_row].height = 5
+
 def set_number_comma(ws, start_column, end_column, start_row, end_row):
     for i in range(start_row, end_row + 1):
         for j in range(start_column, end_column + 1):
@@ -513,7 +611,7 @@ def set_number_decimal(ws, start_column, end_column, start_row, end_row, decimal
         for j in range(start_column, end_column + 1):
             ws[f"{num_to_letter(j)}{i}"].number_format = '#,##0.' + ("0" * decimal_number)
 
-def set_dimensions(ws, current_column, current_row):
+def set_revised_dimensions(ws):
     current_column = 1
     ws.column_dimensions[num_to_letter(current_column)].width = 5
     current_column += 1
@@ -536,7 +634,28 @@ def set_dimensions(ws, current_column, current_row):
     current_column += 1
     ws.column_dimensions[num_to_letter(current_column)].width = 19
     current_column += 1
-    return current_column, current_row
+
+    for row in range(1, ws.max_row + 1):
+        ws.row_dimensions[row].height = 20
+    return
+
+def set_in_lieu_dimensions(ws):
+    current_column = 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 4
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 33
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 20
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 13
+    current_column += 1
+    for i in range(12):
+        ws.column_dimensions[num_to_letter(current_column)].width = 8
+        current_column += 1
+
+    ws.column_dimensions[num_to_letter(current_column)].width = 14
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 24
 
 def set_revised_header(ws, current_column, current_row, year):
     ws.merge_cells(f"A{current_row}:R{current_row}")
@@ -621,15 +740,7 @@ def set_revised_header(ws, current_column, current_row, year):
         end_column,
     )
 
-def set_in_lieu_headers(ws, current_column, current_row):
-
-    def set_bottom_border(ws, col_start, row, col_end=None, style="thin"):
-        col_end = col_end or col_start
-
-        for c in range(col_start, col_end + 1):
-            ws.cell(row=row, column=c).border = Border(
-                bottom=Side(style=style)
-            )
+def set_in_lieu_header(ws, current_column, current_row):
 
     ws[f"{num_to_letter(current_column)}{current_row}"] = "END-USER/UNIT: "
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
@@ -674,8 +785,8 @@ def set_in_lieu_headers(ws, current_column, current_row):
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     set_border_to_cell(ws, current_column, current_row,col_end=current_column + 13)
     current_column += 13
-    ws[f"{num_to_letter(current_column)}{current_row}"] = "PRICE CATALOGUE"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "PRICE \nCATALOGUE"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", wrap_text=True)
     set_border_to_cell(ws, current_column, current_row, row_end=current_row + 1)
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "AMOUNT"
@@ -710,6 +821,103 @@ def set_in_lieu_headers(ws, current_column, current_row):
         end_decimal_column,
         end_column,
     )
+
+
+def set_purchase_request_header(ws, current_column, current_row, date):
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Entity Name: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    current_column += 2
+
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "BULACAN STATE UNIVERSITY "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    set_bottom_border(ws, current_column, current_row, col_end=current_column + 1)
+    current_column += 2
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Fund Cluster: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    current_column += 1
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    set_bottom_border(ws, current_column, current_row, col_end=current_column + 1)
+
+    current_column = 1
+    current_row += 1
+
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Office/ Section: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    current_column += 2
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "PR No.: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    current_column += 1
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    set_bottom_border(ws, current_column, current_row, col_end=current_column + 1)
+    current_column += 2
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Date: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+    current_column += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = date
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+    set_bottom_border(ws, current_column, current_row)
+    current_column += 1
+
+    current_column = 3
+    current_row += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Responsibility Center Code: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", wrap_text=True)
+    current_column += 1
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    set_bottom_border(ws, current_column, current_row, col_end=current_column + 1)
+    current_row += 1
+    hide_cell(ws, current_row)
+
+    current_column = 1
+    current_row += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Stock/ \nProperty \nNo. "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",    wrap_text=True)
+    current_column += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Unit"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column += 1
+
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Item Description"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column += 2
+
+    start_number_column = current_column
+    start_decimal_column = current_column
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Quantity"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Unit Cost"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    current_column += 1
+
+    end_number_column = current_column
+    end_decimal_column = current_column
+    end_column = current_column
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Total Cost"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+
+    return (
+        current_column,
+        current_row,
+        start_number_column,
+        end_number_column,
+        start_decimal_column,
+        end_decimal_column,
+        end_column,
+    )
+
+
 
 def set_revised_signatories(ws, current_column, current_row, dean_name):
 
@@ -954,6 +1162,97 @@ def set_in_lieu_signatories(ws, current_column, current_row, dean_name):
     ws[f"{num_to_letter(current_column)}{current_row}"] = budget_officer
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
 
+def set_purchase_request_signatories(ws, current_column, current_row, dean_name, year):
+    ppmp_signatory = private_supabase.table("DOCUMENT_SIGNATORY").select("*").eq("DocumentType", "PURCHASE REQUEST").maybe_single().execute()
+    if ppmp_signatory is None:
+        return None
+
+    ppmp_signatory = ppmp_signatory.data
+    current_row += 1
+    current_column = 1
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 3)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Requested by: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+    current_column += 4
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 2)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Approved by: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+    current_row += 1
+    current_column = 1
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Signature: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+    current_column += 2
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    set_bottom_border(ws, current_column, current_row, col_end=current_column + 1)
+
+    current_row += 1
+    current_column = 1
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Printed by: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+    current_column += 2
+
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = dean_name
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+    current_column += 2
+
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 2)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_signatory["FullName"]
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+    current_row += 1
+    current_column = 1
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Designation: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+    current_column += 2
+
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Dean, CICT"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "center", "center", )
+    current_column += 2
+
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 2)}{current_row}")
+    ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_signatory["PositionTitle"]
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center", )
+    current_row += 1
+    hide_cell(ws, current_row)
+
+    current_row += 2
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "To be accomplished by the Procurement Office:"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "left", "center", )
+
+    current_row += 2
+    current_column = 1
+    includeds = [f"☐ {year} Annual Procurement Plan", f"☐ {year} Supplemental PPMP", f"☐ {year} Revised PPMP"]
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Included in the:"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    for i in range(len(includeds)):
+        current_column = 3
+        ws[f"{num_to_letter(current_column)}{current_row}"] = includeds[i]
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+        current_column += 2
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "Item No.:_____"
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+        current_column += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "Page No.:_____"
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+        current_column += 1
+        if i == 0:
+            ws[f"{num_to_letter(current_column)}{current_row}"] = "PROCUREMENT OFFICER"
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+        current_row += 1
+
 
 def ppmp_item_category(ppmp_category, ws, current_row):
     total_count = 0
@@ -977,7 +1276,7 @@ def ppmp_item_category(ppmp_category, ws, current_row):
             current_column += 1
             ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["GENERAL DESCRIPTION"]
             set_border_to_cell(ws, current_column, current_row)
-            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", wrap_text=True)
 
             current_column += 1
             ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["Unit of Measure"]
@@ -1067,7 +1366,7 @@ def add_in_lieu_additions(additions, ws, current_row):
         current_column += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = addition["GENERAL DESCRIPTION"]
         set_border_to_cell(ws, current_column, current_row)
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", wrap_text=True)
 
         current_column += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = addition["UNIT OF MEASUREMENT"]
@@ -1112,8 +1411,6 @@ def add_in_lieu_additions(additions, ws, current_row):
     )
     for cell in ws[current_row]:
         cell.fill = gray_fill
-
-    print("ETO ROW MO", current_column)
     return current_row
 
 
@@ -1121,11 +1418,7 @@ def add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, curren
     grand_total = 0
 
     in_lieu_item_list = []
-    print("LIEU", type(in_lieu_items))
-    print(in_lieu_items)
 
-    print("PPMP", type(ppmp_items))
-    print(ppmp_items)
     for in_lieu_item in in_lieu_items:
         ppmp_item = ppmp_items.get(in_lieu_item["ItemID"])
 
@@ -1166,19 +1459,19 @@ def add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, curren
         current_row += 1
         current_column = 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = in_lieu_item["QuantityReduced"]
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+        set_format_to_cell(ws, current_column, current_row, "Tahoma", 10, False, False, "left", "center")
 
         current_column += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = in_lieu_item["ItemName"]
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", wrap_text=True)
 
         current_column += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = in_lieu_item["PricePerUnit"]
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+        set_format_to_cell(ws, current_column, current_row, "Tahoma", 10, False, False, "right", "center")
 
         current_column += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = float(in_lieu_item["QuantityReduced"]) * float(in_lieu_item["PricePerUnit"])
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+        set_format_to_cell(ws, current_column, current_row, "Tahoma", 10, False, False, "right", "center")
         grand_total += float(in_lieu_item["QuantityReduced"]) * float(in_lieu_item["PricePerUnit"])
 
     if not in_lieu_items or not ppmp_items:
@@ -1218,6 +1511,43 @@ def add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, curren
         end_decimal_column,
         end_column,
     )
+
+def add_purchase_requests(purchase_request, ws, current_row):
+
+    current_row += 1
+    current_column = 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = purchase_request["Stock/ Property No."]
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+    current_column += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = purchase_request["Unit"]
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+    current_column += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = purchase_request["Item Description"]
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+    current_column += 2
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = purchase_request["Quantity"]
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+    current_column += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = purchase_request["Unit Cost"]
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+    current_column += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = purchase_request["Total Cost"]
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+    current_column += 1
+
+    current_row += 1
+    current_column = 7
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = purchase_request["Total Cost"]
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center")
+
+    return current_row
 
 def get_unique_sheet_title(wb, title):
     if title not in wb.sheetnames:
