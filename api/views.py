@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from datetime import datetime
 
+import user
 from ml import reverse_knapsack, get_ai_probabilities, model, save_model
 from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items, public_supabase
@@ -815,9 +816,9 @@ def create_in_lieu_request(request):
     new_items = []
     if len(new_items_list) > 0:
         new_items = [{
-            "ItemName": item["name"],
+            "ItemName": item["itemName"],
             "UnitName": item["measurementUnit"],
-            "PricePerUnit": item["unitPrice"],
+            "PricePerUnit": item["priceCatalog"],
             "PlannedQuantity": item["quantity"],
             "AvailableQuantity": 0,
             "PendingQuantity": 0,
@@ -1563,65 +1564,147 @@ def retrain_ml(request):
 
     return Response({"status": "success"}, status=200)
 
-# import time
-# import httpx
-# from rest_framework.decorators import api_view
-# from rest_framework.response import Response
-# from django.conf import settings
-# import os
-# @api_view(['GET'])
-# def tester(request):
-#
-#
-#     url = os.getenv("SUPABASE_URL")
-#
-#     results = {
-#         "supabase_url": url,
-#     }
-#
-#     # Test 1: basic HTTPS connection
-#     try:
-#         start = time.time()
-#
-#         r = httpx.get(
-#             url,
-#             timeout=10,
-#         )
-#
-#         results["root"] = {
-#             "success": True,
-#             "status": r.status_code,
-#             "elapsed": round(time.time() - start, 2),
-#         }
-#
-#     except Exception as e:
-#         results["root"] = {
-#             "success": False,
-#             "type": type(e).__name__,
-#             "error": str(e),
-#         }
-#
-#     # Test 2: Supabase Auth endpoint
-#     try:
-#         start = time.time()
-#
-#         r = httpx.get(
-#             f"{url}/auth/v1/health",
-#             timeout=10,
-#         )
-#
-#         results["auth"] = {
-#             "success": True,
-#             "status": r.status_code,
-#             "elapsed": round(time.time() - start, 2),
-#             "body": r.text[:500],
-#         }
-#
-#     except Exception as e:
-#         results["auth"] = {
-#             "success": False,
-#             "type": type(e).__name__,
-#             "error": str(e),
-#         }
-#
-#     return Response(results)
+@api_view(['POST'])
+def get_supplementals(request):
+    # user = get_user(request)
+    # if user is None:
+    #     return Response({"error": "Invalid token"}, status=401)
+    year = request.POST["year"]
+    fiscal_year_id = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).single().execute()
+    fiscal_year_id = fiscal_year_id.data["FiscalYearID"]
+    response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year_id).execute()
+    data = [
+        {
+            "itemId": item["ItemID"],
+            "itemName": item["ItemName"],
+            "unitMeasurement": item["UnitName"],
+            # "plannedQuantity": item["PlannedQuantity"],
+            # "availableQuantity": item["AvailableQuantity"],
+            # "pendingQuantity": item["PendingQuantity"],
+            # "fulfilledQuantity": item["FulfilledQuantity"],
+            "priceCatalog": item["PricePerUnit"],
+            "itemCategory": item["ItemCategory"],
+            "ppmpCategory": item["PpmpCategory"],
+        }
+        for item in response.data
+    ]
+    item_categories = get_item_categories()
+    ppmp_categories = get_ppmp_categories()
+    supplementals = private_supabase.table("SUPPLEMENTAL").select("*").eq("FiscalYearID", fiscal_year_id).execute()
+    supplementals = supplementals.data
+    supplemental_ids = [supplemental["SupplementalID"] for supplemental in supplementals]
+    supplemental_items = private_supabase.table("ADDITIONAL_SUPPLEMENTAL_ITEM").select("*").in_("SupplementalID", supplemental_ids).execute()
+    supplemental_items = supplemental_items.data
+    user_ids = [supplemental["UserID"] for supplemental in supplementals]
+    users = private_supabase.table("USER").select("*").in_("UserID", user_ids).execute()
+    users = users.data
+    users_map = {
+        user["UserID"]: user["FullName"]
+        for user in users
+    }
+    supplemental_items_map = {}
+    for supplemental_item in supplemental_items:
+        supplemental_items_map.setdefault(supplemental_item["SupplementalID"], []).append(supplemental_item)
+
+    supplementalHistory = [
+        {
+        "createdAt": supplemental["created_at"],
+        "createdBy": users_map[supplemental["UserID"]],
+        "supplementalABC": supplemental["SupplementalABC"],
+        "supplementalItems": [
+            {
+                "itemName": supplemental_item["ItemName"],
+                "measurementUnit": supplemental_item["UnitName"],
+                "quantity": supplemental_item["Quantity"],
+                "priceCatalog": supplemental_item["UnitPrice"],
+                "itemCategory": supplemental_item["ItemCategory"],
+                "ppmpCategory": supplemental_item["PpmpCategory"],
+            }for supplemental_item in supplemental_items_map.get(supplemental["SupplementalID"], [])
+        ]
+        }for supplemental in supplementals
+    ]
+
+    return Response({"ppmpTableData": data, "itemCategories": item_categories, "ppmpCategories": ppmp_categories, "supplementalHistory": supplementalHistory})
+
+@api_view(['POST'])
+def add_supplemental(request):
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "Invalid token"}, status=401)
+    user_id = user["UserID"]
+    year = request.POST["year"]
+    description = request.POST["description"]
+    new_items = json.loads(request.POST["newItems"])
+    additional_budget = int(request.POST["additionalBudget"])
+    fiscal_year_id = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
+    total_abc = int(fiscal_year_id.data["TotalABC"])
+    fiscal_year_id = fiscal_year_id.data["FiscalYearID"]
+
+    response = private_supabase.table("SUPPLEMENTAL").insert({
+        "SupplementalABC": additional_budget,
+        "FiscalYearID": fiscal_year_id,
+        "UserID": user_id,
+        "Description": description,
+    }).select().execute()
+
+    private_supabase.table("FISCAL_YEAR").update({
+        "TotalABC": total_abc + additional_budget
+    }).eq("FiscalYearID", fiscal_year_id).execute()
+
+    supplemental = response.data[0]
+    supplemental_id = supplemental["SupplementalID"]
+    if new_items:
+        supplemental_items = []
+        new_supplemental_items = []
+        update_supplemental_items = {}
+        for supplemental_item in new_items:
+            current_supplemental_item = {
+                "ItemName": supplemental_item["itemName"],
+                "UnitName": supplemental_item["measurementUnit"],
+                "Quantity": supplemental_item["quantity"],
+                "UnitPrice": supplemental_item["priceCatalog"],
+                "ItemCategory": supplemental_item["itemCategory"],
+                "PpmpCategory": supplemental_item["ppmpCategory"],
+                "SupplementalID": supplemental_id,
+            }
+            if supplemental_item["added"] in [True, "true"]:
+                current_supplemental_item["ItemID"] = None
+                supplemental_items.append(current_supplemental_item)
+                new_supplemental = {
+                    "ItemName": supplemental_item["itemName"],
+                    "UnitName": supplemental_item["measurementUnit"],
+                    "PricePerUnit": supplemental_item["priceCatalog"],
+                    "PlannedQuantity": supplemental_item["quantity"],
+                    "AvailableQuantity": supplemental_item["quantity"],
+                    "PendingQuantity": 0,
+                    "FulfilledQuantity": 0,
+                    "FiscalYearID": fiscal_year_id,
+                    "ItemCategory": supplemental_item["itemCategory"],
+                    "PpmpCategory": supplemental_item["ppmpCategory"],
+                }
+                new_supplemental_items.append(new_supplemental)
+            else:
+                current_supplemental_item["ItemID"] = supplemental_item["itemId"]
+                supplemental_items.append(current_supplemental_item)
+                available_quantity = get_item_detail(supplemental_item["itemId"], "AvailableQuantity")
+                planned_quantity = get_item_detail(supplemental_item["itemId"], "PlannedQuantity")
+                available_quantity += supplemental_item["quantity"]
+                planned_quantity += supplemental_item["quantity"]
+                update_supplemental_items[supplemental_item["itemId"]] = {
+                    "AvailableQuantity": available_quantity,
+                    "PlannedQuantity": planned_quantity,
+                }
+
+        # insert for additional supplemental
+        private_supabase.table("ADDITIONAL_SUPPLEMENTAL_ITEM").insert(supplemental_items).execute()
+        # insert new
+        if new_supplemental_items:
+            private_supabase.table("PPMP_ITEM").insert(new_supplemental_items).execute()
+        # update quantity
+        if update_supplemental_items:
+            for update_item_id, update_data in update_supplemental_items.items():
+                private_supabase.table("PPMP_ITEM").update({
+                    "AvailableQuantity": update_data["AvailableQuantity"],
+                    "PlannedQuantity": update_data["PlannedQuantity"],
+                }).eq("ItemID", update_item_id).execute()
+    return Response({"status": "success"}, status=200)
