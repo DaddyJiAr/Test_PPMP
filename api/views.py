@@ -842,9 +842,9 @@ def create_in_lieu_request(request):
         # di pala muna dapat ma insert
 
     insert_in_lieu_addition = [{
-        "ItemName": item["name"],
+        "ItemName": item["itemName"],
         "UnitName": item["measurementUnit"],
-        "UnitPrice": item["unitPrice"],
+        "UnitPrice": item["priceCatalog"],
         "Quantity": item["quantity"],
         "InLieuID": in_lieu_id,
         "ItemCategory": item["itemCategory"],
