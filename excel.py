@@ -474,7 +474,7 @@ def add_purchase_request(wb, fiscal_year, year, dean_name):
         title_date = purchase_request_date.strftime('%m-%d-%Y')
         purchase_request_date = purchase_request_date.strftime('%m/%d/%Y')
 
-        default_title = f"In Lieu as of {title_date}"
+        default_title = f"Purchase Request {title_date}"
         ws_title = get_unique_sheet_title(wb, default_title)
 
         ws = wb.create_sheet(ws_title)
@@ -494,8 +494,6 @@ def add_purchase_request(wb, fiscal_year, year, dean_name):
         }
 
 
-        total_count = 0
-        grand_total_amount = 0
         start_row = 0
         end_row = 0
         start_column = 1
@@ -525,39 +523,24 @@ def add_purchase_request(wb, fiscal_year, year, dean_name):
         ) = set_purchase_request_header(ws, current_column, current_row, purchase_request_date)
 
         start_row = current_row
-        current_row = add_purchase_requests(purchase_request_dict, ws, current_row)
+        current_row, table_end = add_purchase_requests(purchase_request_dict, ws, current_row)
         end_row = current_row
 
-        set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
-        set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
+        set_number_comma(ws, start_number_column, end_number_column, start_row, table_end)
+        set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, table_end)
 
         set_border_to_cell(
             ws,
             col_start=start_column,
             row_start=start_row,
             col_end=end_column,
-            row_end=end_row
+            row_end=table_end
         )
+        start_signatories_row, end_signatories_row, start_requested_column, end_requested_column, start_approved_column, end_approved_column = set_purchase_request_signatories(
+            ws, current_column, current_row, dean_name, year)
 
-        current_row += 1
-        current_column = 1
-
-        ws[f"{num_to_letter(current_column)}{current_row}"] = "Purpose: "
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
-        current_column += 1
-        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 5)}{current_row}")
-        set_bottom_border(ws, current_column, current_row, col_end=current_column + 5)
-
-        current_row += 1
-        current_column = 2
-
-        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 5)}{current_row}")
-        set_bottom_border(ws, current_column, current_row, col_end=current_column + 5)
-        current_column = 1
-        current_row += 1
-        hide_cell(ws, current_row)
-
-        set_purchase_request_signatories(ws, current_column, current_row, dean_name, year)
+        set_purchase_request_dimensions(ws)
+        purchase_request_borders(ws, end_column, end_row, start_signatories_row, end_signatories_row, start_requested_column, end_requested_column, start_approved_column, end_approved_column)
 
 def add_dashboard_reports():
     pass
@@ -656,6 +639,23 @@ def set_in_lieu_dimensions(ws):
     ws.column_dimensions[num_to_letter(current_column)].width = 14
     current_column += 1
     ws.column_dimensions[num_to_letter(current_column)].width = 24
+
+def set_purchase_request_dimensions(ws):
+    current_column = 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 10
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 9
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 14
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 29
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 13
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 15
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 21
+
 
 def set_revised_header(ws, current_column, current_row, year):
     ws.merge_cells(f"A{current_row}:R{current_row}")
@@ -785,6 +785,7 @@ def set_in_lieu_header(ws, current_column, current_row):
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     set_border_to_cell(ws, current_column, current_row,col_end=current_column + 13)
     current_column += 13
+    start_decimal_column = current_row
     ws[f"{num_to_letter(current_column)}{current_row}"] = "PRICE \nCATALOGUE"
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", wrap_text=True)
     set_border_to_cell(ws, current_column, current_row, row_end=current_row + 1)
@@ -799,7 +800,7 @@ def set_in_lieu_header(ws, current_column, current_row):
     current_row += 1
     current_column = 4
     start_number_column = current_column
-    start_decimal_column = current_row
+
     months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "TOTAL"]
     column_width = 8
     for i in range(0, len(months)):
@@ -811,7 +812,6 @@ def set_in_lieu_header(ws, current_column, current_row):
         set_border_to_cell(ws, current_column, current_row, )
         set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
         current_column += 1
-
     return (
         current_column,
         current_row,
@@ -839,6 +839,9 @@ def set_purchase_request_header(ws, current_column, current_row, date):
     current_column += 1
     ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
     set_bottom_border(ws, current_column, current_row, col_end=current_column + 1)
+
+    current_row += 1
+    hide_cell(ws, current_row)
 
     current_column = 1
     current_row += 1
@@ -892,11 +895,12 @@ def set_purchase_request_header(ws, current_column, current_row, date):
     current_column += 2
 
     start_number_column = current_column
-    start_decimal_column = current_column
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Quantity"
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
 
+
+    start_decimal_column = current_column
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Unit Cost"
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
@@ -1169,12 +1173,20 @@ def set_purchase_request_signatories(ws, current_column, current_row, dean_name,
 
     ppmp_signatory = ppmp_signatory.data
     current_row += 1
+    hide_cell(ws, current_row)
+    start_signatories_row = current_row
+
+    current_row += 1
     current_column = 1
+    start_requested_column = current_column
+    end_requested_column = current_column + 3
     ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 3)}{current_row}")
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Requested by: "
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
 
     current_column += 4
+    start_approved_column = current_column
+    end_approved_column = current_column + 2
     ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 2)}{current_row}")
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Approved by: "
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
@@ -1221,6 +1233,7 @@ def set_purchase_request_signatories(ws, current_column, current_row, dean_name,
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center", )
     current_row += 1
     hide_cell(ws, current_row)
+    end_signatories_row = current_row
 
     current_row += 2
     current_column = 1
@@ -1249,9 +1262,11 @@ def set_purchase_request_signatories(ws, current_column, current_row, dean_name,
         current_column += 1
         if i == 0:
             ws[f"{num_to_letter(current_column)}{current_row}"] = "PROCUREMENT OFFICER"
-            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
 
         current_row += 1
+
+    return start_signatories_row, end_signatories_row, start_requested_column, end_requested_column, start_approved_column, end_approved_column
 
 
 def ppmp_item_category(ppmp_category, ws, current_row):
@@ -1546,8 +1561,27 @@ def add_purchase_requests(purchase_request, ws, current_row):
 
     ws[f"{num_to_letter(current_column)}{current_row}"] = purchase_request["Total Cost"]
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center")
+    table_end_row = current_row
 
-    return current_row
+    current_row += 1
+    current_column = 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Purpose: "
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    current_column += 1
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 5)}{current_row}")
+    set_bottom_border(ws, current_column, current_row, col_end=current_column + 5)
+
+    current_row += 1
+    current_column = 2
+
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 5)}{current_row}")
+    set_bottom_border(ws, current_column, current_row, col_end=current_column + 5)
+    current_column = 1
+    current_row += 1
+    hide_cell(ws, current_row)
+
+    return current_row, table_end_row
 
 def get_unique_sheet_title(wb, title):
     if title not in wb.sheetnames:
@@ -1558,3 +1592,36 @@ def get_unique_sheet_title(wb, title):
         count += 1
 
     return f"{title} ({count})"
+
+def purchase_request_borders(ws, end_column, end_row, start_signatories_row, end_signatories_row, start_requested_column, end_requested_column, start_approved_column, end_approved_column):
+    add_outer_border(ws, f"A5:B7", style="medium")
+    add_outer_border(ws, f"C5:E7", style="medium")
+    add_outer_border(ws, f"F5:G7", style="medium")
+    add_outer_border(ws, f"{num_to_letter(start_requested_column)}{start_signatories_row}:{num_to_letter(end_requested_column)}{end_signatories_row}", style="medium")
+    add_outer_border(ws, f"{num_to_letter(start_approved_column)}{start_signatories_row}:{num_to_letter(end_approved_column)}{end_signatories_row}", style="medium")
+    add_outer_border(ws, f"A1:{num_to_letter(end_column)}{end_row}", style="medium")
+
+
+def add_outer_border(ws, cell_range, style="thin", color="000000"):
+    print("Border range:", cell_range)
+
+    side = Side(style=style, color=color)
+
+    rows = ws[cell_range]
+
+    print("Rows:", rows)
+
+
+    min_row = rows[0][0].row
+    max_row = rows[-1][0].row
+    min_col = rows[0][0].column
+    max_col = rows[0][-1].column
+
+    for row in rows:
+        for cell in row:
+            cell.border = Border(
+                left=side if cell.column == min_col else cell.border.left,
+                right=side if cell.column == max_col else cell.border.right,
+                top=side if cell.row == min_row else cell.border.top,
+                bottom=side if cell.row == max_row else cell.border.bottom,
+            )
