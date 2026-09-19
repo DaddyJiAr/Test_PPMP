@@ -10,7 +10,8 @@ from datetime import datetime
 import user
 from ml import reverse_knapsack, get_ai_probabilities, model, save_model
 from user.views import get_admin
-from .utils import private_supabase, get_user, check_fields, get_ppmp_items, public_supabase
+from .utils import private_supabase, get_user, check_fields, get_ppmp_items, public_supabase, get_dashboard_cards, \
+    get_available_lieu_pool_funds
 from excel import testingPPMP, upload_excel, export_formatted_excel
 from smart_suggest.ml_suggestion import MLSuggest
 import pandas as pd
@@ -31,18 +32,6 @@ def get_item(item_id):
 def get_item_detail(item_id, column_name):
     response = private_supabase.table("PPMP_ITEM").select(column_name).eq("ItemID", item_id).single().execute()
     return response.data[column_name]
-
-def get_available_lieu_pool_funds(ppmp_items):
-    available_lieu_pool_funds = 0
-    for ppmp_item in ppmp_items.data:
-        available_lieu_pool_funds += ppmp_item["AvailableQuantity"] * ppmp_item["PricePerUnit"]
-    return available_lieu_pool_funds
-
-def get_open_funds(ppmp_items):
-    open_funds = 0
-    for ppmp_item in ppmp_items.data:
-        open_funds += ppmp_item["PlannedQuantity"] * ppmp_item["PricePerUnit"]
-    return open_funds
 
 def get_year_str(fiscal_year_id):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("Year").eq("FiscalYearID", fiscal_year_id).single().execute()
@@ -386,9 +375,9 @@ def upload(request):
 
 @api_view(['POST'])
 def export(request):
-    # user = get_user(request)
-    # if user is None:
-    #     return Response({"error": "User not found"}, status=401)
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "User not found"}, status=401)
     year = request.POST["year"]
     options = request.POST["options"]
     create_procurement_log("PPMP", "export", year, "JIAR", "")
@@ -419,56 +408,9 @@ def dashboard_cards(request):
     except Exception as e:
         return Response({"error": "Invalid fields"}, status=400)
     year = request.POST["year"]
-    fiscal_year = private_supabase.table("FISCAL_YEAR").select("TotalABC", "FiscalYearID").eq("Year", year).single().execute()
-    total_annual_budget = fiscal_year.data["TotalABC"]
-    ppmp_items = private_supabase.table("PPMP_ITEM").select("ItemID, PlannedQuantity, PendingQuantity, FulfilledQuantity, AvailableQuantity, PricePerUnit").eq('FiscalYearID', fiscal_year.data["FiscalYearID"]).execute()
-    item_ids = list({
-        item["ItemID"]
-        for item in ppmp_items.data
-        if item["ItemID"] is not None
-    })
-    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("ItemID, RequestQuantity, Status").in_("ItemID", item_ids).execute()
-    in_lieus = private_supabase.table("IN_LIEU").select("Status").eq('FiscalYearID', fiscal_year.data["FiscalYearID"]).execute()
-    # retry
-    # for attempt in range(3):
-    #     purchase_requests = (
-    #         private_supabase
-    #         .table("PURCHASE_REQUEST")
-    #         .select("ItemID, RequestQuantity, Status")
-    #         .in_("ItemID", item_ids)
-    #         .execute()
-    #     )
-    #
-    #     if purchase_requests.data:
-    #         break
-    #
-    #     time.sleep(0.2)
-    requested_funds = 0
-    arrived_funds = 0
-    pending_pr = 0
-    pending_in_lieu_count = 0
-    ppmp_item_map = {
-        item["ItemID"]: item
-        for item in ppmp_items.data
-    }
-    for purchase_request in purchase_requests.data:
-        purchase_request_item = ppmp_item_map.get(purchase_request["ItemID"])
-        if not purchase_request_item:
-            continue
-        if purchase_request["Status"] == "Pending":
-            requested_funds += purchase_request_item["PricePerUnit"] * purchase_request["RequestQuantity"]
-    for in_lieu in in_lieus.data:
-        if in_lieu["Status"] == "Pending":
-            pending_in_lieu_count += 1
+    (total_annual_budget, committed_funds, available_lieu_pool_funds, open_funds, requested_funds,
+     arrived_funds, pending_in_lieu_count) = get_dashboard_cards(year)
 
-    for ppmp_item in ppmp_items.data:
-        pending_pr += ppmp_item["PricePerUnit"] * ppmp_item["PendingQuantity"]
-        arrived_funds += ppmp_item["PricePerUnit"] * ppmp_item["FulfilledQuantity"]
-
-    committed_funds = pending_pr + arrived_funds
-
-    available_lieu_pool_funds = get_available_lieu_pool_funds(ppmp_items)
-    open_funds = total_annual_budget - get_open_funds(ppmp_items)
     logs = private_supabase.table("PROCUREMENT_LOG").select("*").execute()
     logs = [
         {
@@ -774,26 +716,6 @@ def create_in_lieu_request(request):
         return Response({"error": "Fiscal year missing"},status=401)
     fiscal_year_id = fiscal_year.data["FiscalYearID"]
 
-    # if len(in_lieu_items) > 0:
-    #     ppmp_item_id = in_lieu_items[0]["itemId"]
-    #     ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
-    #     fiscal_year_id = ppmp_item.data["FiscalYearID"]
-    # else:
-    #     current_year = datetime.now().year
-    #     fiscal_year = None
-    #     for current_year in range(current_year, current_year - 3, -1):
-    #         print(current_year)
-    #         fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", current_year).maybe_single().execute()
-    #
-    #         if fiscal_year is None:
-    #             continue
-    #
-    #         print(fiscal_year.data)
-    #         break
-    #     if not fiscal_year or not fiscal_year.data:
-    #         return Response({"error": "Fiscal year missing"},status=401)
-    #
-    #     fiscal_year_id = fiscal_year.data["FiscalYearID"]
     response = private_supabase.table("IN_LIEU").insert({
         "BudgetImpact": budget_impact,
         "Status": status,
@@ -827,19 +749,6 @@ def create_in_lieu_request(request):
             "ItemCategory": item["itemCategory"],
             "PpmpCategory": item["ppmpCategory"],
         }for item in new_items_list]
-        # response = private_supabase.table("PPMP_ITEM").insert(new_items).execute()
-        # if not response.data:
-        #     return Response({"error": "Error inserting PPMP item "}, status=401)
-        # inserted_items = response.data
-        # print(inserted_items)
-        # pairs the original_item to new_items_list and inserted_item to inserted_items
-        # parang for each pero dalawa
-        #gagana lang daw pag same dictionary
-        # for original_item, inserted_item in zip(new_items_list, inserted_items):
-        #     original_item["itemId"] = inserted_item["ItemID"]
-        # print("new_items_list:", new_items_list)
-        # print("in_lieu_addition:", in_lieu_addition)
-        # di pala muna dapat ma insert
 
     insert_in_lieu_addition = [{
         "ItemName": item["itemName"],
@@ -864,7 +773,7 @@ def create_in_lieu_request(request):
 
     ml_learn_from_decision(private_supabase, year, in_lieu_items)
 
-    for reduced in in_lieu_items: # in_lieu_items para may name
+    for reduced in in_lieu_items:
         create_procurement_log(
             "In Lieu",
             "reallocate_reduce",
@@ -1001,16 +910,7 @@ def reject_in_lieu(user, in_lieu_id, year):
         fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", year).maybe_single().execute()
         if fiscal_year is None:
             return Response({"error": "Fiscal year missing"}, status=401)
-        # if len(in_lieu_items.data) > 0:
-        #     ppmp_item_id = in_lieu_items.data[0]["ItemID"]
-        #     ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
-        #     fiscal_year_id = ppmp_item.data["FiscalYearID"]
-        #     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", fiscal_year_id).single().execute()
-        # else:
-        #     current_year = datetime.now().year
-        #     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", current_year).single().execute()
-        #     if not fiscal_year.data:
-        #         return Response({"error": "Fiscal year missing"}, status=401)
+
         response = private_supabase.table("IN_LIEU").update({"Status": status}).eq("InLieuID", in_lieu_id).execute()
         year = fiscal_year.data["Year"]
         status = status.lower()
@@ -1078,17 +978,6 @@ def approve_in_lieu(user, in_lieu_id, year):
     if fiscal_year is None:
         return Response({"error": "Fiscal year missing"}, status=401)
     fiscal_year_id = fiscal_year.data["FiscalYearID"]
-    # if len(in_lieu_items) > 0:
-    #     ppmp_item_id = in_lieu_items[0]["ItemID"]
-    #     ppmp_item = private_supabase.table("PPMP_ITEM").select("FiscalYearID").eq("ItemID", ppmp_item_id).single().execute()
-    #     fiscal_year_id = ppmp_item.data["FiscalYearID"]
-    #     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("FiscalYearID", fiscal_year_id).single().execute()
-    # else:
-    #     current_year = datetime.now().year
-    #     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", current_year).single().execute()
-    #     if not fiscal_year.data:
-    #         return Response({"error": "Fiscal year missing"}, status=401)
-    # fiscal_year_id = fiscal_year.data["FiscalYearID"]
 
     in_lieu_item_map = {}
     for in_lieu_item in in_lieu_items:
@@ -1566,9 +1455,9 @@ def retrain_ml(request):
 
 @api_view(['POST'])
 def get_supplementals(request):
-    # user = get_user(request)
-    # if user is None:
-    #     return Response({"error": "Invalid token"}, status=401)
+    user = get_user(request)
+    if user is None:
+        return Response({"error": "Invalid token"}, status=401)
     year = request.POST["year"]
     fiscal_year_id = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).single().execute()
     fiscal_year_id = fiscal_year_id.data["FiscalYearID"]

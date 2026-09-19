@@ -5,8 +5,13 @@ from time import time
 from django.http.response import HttpResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, Border, Side, Alignment, PatternFill
+from openpyxl.chart import BarChart, Reference
+from openpyxl.chart.series import SeriesLabel
+from openpyxl.chart.text import RichText
+from openpyxl.chart.layout import Layout, ManualLayout
+from openpyxl.drawing.text import Paragraph, ParagraphProperties, CharacterProperties, RichTextProperties
 import pandas as pd
-from api.utils import private_supabase
+from api.utils import private_supabase, get_dashboard_cards
 from api.views import get_ppmp_items
 from rest_framework.response import Response
 
@@ -184,6 +189,7 @@ def export_formatted_excel(year, options, dean_name):
     if want_supplemental: add_supplemental()
     if want_in_lieus: add_in_lieus(wb, fiscal_year, year, dean_name)
     if want_purchase_requests: add_purchase_request(wb, fiscal_year, year, dean_name)
+    if want_dashboard_report: add_dashboard_report(wb, fiscal_year, year)
 
     if default_ws.title == "Sheet" and len(wb.worksheets) > 1:
         wb.remove(default_ws)
@@ -279,11 +285,6 @@ def add_revised(wb, year, title, dean_name):
 
     lab_supplies = lab_supplies_dict
 
-    # return Response({"Office": office_supplies, "Lab": lab_supplies})
-    # display subtotal per category
-    # sa subtotal price per cat = 0.00
-    # get signatories
-
     current_row += 2
     current_column = 1
 
@@ -338,9 +339,6 @@ def add_revised(wb, year, title, dean_name):
     end_row = current_row
 
     current_column, current_row = set_revised_signatories(ws, current_column, current_row, dean_name)
-
-
-    # set formats
 
     set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
     set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
@@ -542,9 +540,22 @@ def add_purchase_request(wb, fiscal_year, year, dean_name):
         set_purchase_request_dimensions(ws)
         purchase_request_borders(ws, end_column, end_row, start_signatories_row, end_signatories_row, start_requested_column, end_requested_column, start_approved_column, end_approved_column)
 
-def add_dashboard_reports():
-    pass
+def add_dashboard_report(wb, fiscal_year, year):
+    current_row = 2
+    current_column = 2
+    title = f"{year} Dashboard Reports"
+    ws_title = get_unique_sheet_title(wb, title)
 
+    ws = wb.create_sheet(ws_title)
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "DASHBOARD SUMMARY"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 16, True, False, "left", "center", )
+
+    current_row = set_dashboard_summary_header(ws, current_row)
+    current_row = add_dashboard_summaries(ws, year, current_row)
+    current_row = set_category_allocation_header(ws, current_row)
+    current_row = add_category_allocation(ws, fiscal_year, year, current_row)
+    set_dashboard_report_dimensions(ws)
 
 def num_to_letter(num):
     return chr(num + 64)
@@ -656,6 +667,11 @@ def set_purchase_request_dimensions(ws):
     current_column += 1
     ws.column_dimensions[num_to_letter(current_column)].width = 21
 
+def set_dashboard_report_dimensions(ws):
+    current_column = 2
+    ws.column_dimensions[num_to_letter(current_column)].width = 40
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 20
 
 def set_revised_header(ws, current_column, current_row, year):
     ws.merge_cells(f"A{current_row}:R{current_row}")
@@ -921,6 +937,55 @@ def set_purchase_request_header(ws, current_column, current_row, date):
         end_column,
     )
 
+def set_dashboard_summary_header(ws, current_row):
+    header_fill = PatternFill(
+        fill_type="solid",
+        fgColor="76232F"
+    )
+    header_font = Font(
+        bold=True,
+        color="FFFFFF"
+    )
+
+    current_column = 2
+    current_row += 2
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Category: "
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, True, False, "left", "center")
+    ws[f"{num_to_letter(current_column)}{current_row}"].fill = header_fill
+    ws[f"{num_to_letter(current_column)}{current_row}"].font = header_font
+
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Total Allocation (PHP)"
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, True, False, "left", "center")
+    ws[f"{num_to_letter(current_column)}{current_row}"].fill = header_fill
+    ws[f"{num_to_letter(current_column)}{current_row}"].font = header_font
+
+    return current_row
+
+def set_category_allocation_header(ws, current_row):
+    header_fill = PatternFill(
+        fill_type="solid",
+        fgColor="76232F"
+    )
+    header_font = Font(
+        bold=True,
+        color="FFFFFF"
+    )
+
+    current_column = 2
+    current_row += 2
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Category: "
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, True, False, "left", "center")
+    ws[f"{num_to_letter(current_column)}{current_row}"].fill = header_fill
+    ws[f"{num_to_letter(current_column)}{current_row}"].font = header_font
+
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Total Allocation (PHP)"
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, True, False, "left", "center")
+    ws[f"{num_to_letter(current_column)}{current_row}"].fill = header_fill
+    ws[f"{num_to_letter(current_column)}{current_row}"].font = header_font
+
+    return current_row
 
 
 def set_revised_signatories(ws, current_column, current_row, dean_name):
@@ -1582,6 +1647,156 @@ def add_purchase_requests(purchase_request, ws, current_row):
     hide_cell(ws, current_row)
 
     return current_row, table_end_row
+
+def add_dashboard_summaries(ws, year, current_row):
+    (total_annual_budget, committed_funds, available_lieu_pool_funds, open_funds, requested_funds,
+     arrived_funds, pending_in_lieu_count) = get_dashboard_cards(year)
+    current_column = 2
+    current_row += 1
+
+    start_row = current_row
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Total Annual Budget"
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = total_annual_budget
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "right", "center")
+    current_column = 2
+    current_row += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Committed Funds"
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = committed_funds
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "right", "center")
+    current_column = 2
+    current_row += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Available Lieu Pool"
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = available_lieu_pool_funds
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "right", "center")
+    current_column = 2
+    current_row += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Open Funds"
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = open_funds
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "right", "center")
+    current_column = 2
+    current_row += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Purchase Request"
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = requested_funds
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "right", "center")
+    current_column = 2
+    current_row += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Fulfilled Items"
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = arrived_funds
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "right", "center")
+    current_column = 2
+    current_row += 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Pending In Lieu Approval"
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = pending_in_lieu_count
+    set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "right", "center")
+
+    set_number_comma(ws, current_column, current_column, start_row, current_row)
+    set_number_decimal(ws, current_column, current_column, start_row, current_row)
+
+    return current_row
+
+def add_category_allocation(ws, fiscal_year, year, current_row):
+    allocations = private_supabase.table("PPMP_ITEM").select("ItemCategory", "PlannedQuantity", "PricePerUnit").eq("FiscalYearID", fiscal_year).execute()
+    allocations = allocations.data
+
+    allocations_sum = {}
+
+    for allocation in allocations:
+        category = allocation["ItemCategory"]
+        quantity = allocation["PlannedQuantity"]
+        price = allocation["PricePerUnit"]
+        amount = quantity * price
+
+        allocations_sum[category] = allocations_sum.get(category, 0) + amount
+
+    sorted_allocations = sorted(allocations_sum.items(), key=lambda item: item[1], reverse=True)
+
+    start_row = current_row
+    for category, value in sorted_allocations:
+        current_column = 2
+        current_row += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = category
+        set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "left", "center")
+        current_column += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = value
+        set_format_to_cell(ws, current_column, current_row, "Calibri", 11, False, False, "right", "center")
+
+
+    set_number_comma(ws, current_column, current_column, start_row, current_row)
+    set_number_decimal(ws, current_column, current_column, start_row, current_row)
+
+    bar_chart = BarChart()
+
+    bar_chart.type = "col"
+    bar_chart.grouping = "clustered"
+    bar_chart.style = 2
+
+    bar_chart.title = f"{year} Budget Allocation by Category"
+    bar_chart.y_axis.title = "Total Amount (PHP)"
+    bar_chart.x_axis.title = "Category"
+
+    bar_chart.x_axis.delete = False
+    bar_chart.y_axis.delete = False
+
+    bar_chart.y_axis.numFmt = '#,##0.00'
+    bar_chart.y_axis.majorGridlines = bar_chart.y_axis.majorGridlines
+
+    bar_chart.x_axis.txPr = RichText(
+        bodyPr=RichTextProperties(rot=-2700000, vert="horz"),
+        p=[Paragraph(pPr=ParagraphProperties(defRPr=CharacterProperties()), endParaRPr=CharacterProperties())],
+    )
+
+    data = Reference(ws, min_col=3, min_row=start_row + 1, max_row=current_row)
+    categories = Reference(ws, min_col=2, min_row=start_row + 1, max_row=current_row)
+
+    bar_chart.add_data(data, titles_from_data=False)
+    bar_chart.set_categories(categories)
+
+    bar_chart.series[0].tx = SeriesLabel(v="Total Allocation (PHP)")
+    bar_chart.legend.position = "r"  # use `bar_chart.legend = None` to hide it
+    bar_chart.legend = None
+    bar_chart.title.overlay = False
+    bar_chart.layout = Layout(
+        manualLayout=ManualLayout(
+            layoutTarget="inner",
+            xMode="edge", yMode="edge",
+            x=0.14,
+            y=0.10,
+            w=0.80,
+            h=0.80
+        )
+    )
+
+    bar_chart.gapWidth = 40
+    bar_chart.varyColors = False
+
+    bar_chart.height = 12
+    bar_chart.width = 16
+
+    ws.add_chart(bar_chart, f"E{start_row}")
+
+    return current_row
+
+
 
 def get_unique_sheet_title(wb, title):
     if title not in wb.sheetnames:

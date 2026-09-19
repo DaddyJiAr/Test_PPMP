@@ -74,3 +74,74 @@ def check_fields(required_fields, request):
 def get_ppmp_items(year):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
     return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).execute()
+
+def get_dashboard_cards(year):
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("TotalABC", "FiscalYearID").eq("Year",
+                                                                                              year).single().execute()
+    total_annual_budget = fiscal_year.data["TotalABC"]
+    ppmp_items = private_supabase.table("PPMP_ITEM").select(
+        "ItemID, PlannedQuantity, PendingQuantity, FulfilledQuantity, AvailableQuantity, PricePerUnit").eq(
+        'FiscalYearID', fiscal_year.data["FiscalYearID"]).execute()
+    item_ids = list({
+        item["ItemID"]
+        for item in ppmp_items.data
+        if item["ItemID"] is not None
+    })
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("ItemID, RequestQuantity, Status").in_(
+        "ItemID", item_ids).execute()
+    in_lieus = private_supabase.table("IN_LIEU").select("Status").eq('FiscalYearID',
+                                                                     fiscal_year.data["FiscalYearID"]).execute()
+    # retry
+    # for attempt in range(3):
+    #     purchase_requests = (
+    #         private_supabase
+    #         .table("PURCHASE_REQUEST")
+    #         .select("ItemID, RequestQuantity, Status")
+    #         .in_("ItemID", item_ids)
+    #         .execute()
+    #     )
+    #
+    #     if purchase_requests.data:
+    #         break
+    #
+    #     time.sleep(0.2)
+    requested_funds = 0
+    arrived_funds = 0
+    pending_pr = 0
+    pending_in_lieu_count = 0
+    ppmp_item_map = {
+        item["ItemID"]: item
+        for item in ppmp_items.data
+    }
+    for purchase_request in purchase_requests.data:
+        purchase_request_item = ppmp_item_map.get(purchase_request["ItemID"])
+        if not purchase_request_item:
+            continue
+        if purchase_request["Status"] == "Pending":
+            requested_funds += purchase_request_item["PricePerUnit"] * purchase_request["RequestQuantity"]
+    for in_lieu in in_lieus.data:
+        if in_lieu["Status"] == "Pending":
+            pending_in_lieu_count += 1
+
+    for ppmp_item in ppmp_items.data:
+        pending_pr += ppmp_item["PricePerUnit"] * ppmp_item["PendingQuantity"]
+        arrived_funds += ppmp_item["PricePerUnit"] * ppmp_item["FulfilledQuantity"]
+
+    committed_funds = pending_pr + arrived_funds
+
+    available_lieu_pool_funds = get_available_lieu_pool_funds(ppmp_items)
+    open_funds = total_annual_budget - get_open_funds(ppmp_items)
+    return (total_annual_budget, committed_funds, available_lieu_pool_funds, open_funds, requested_funds,
+     arrived_funds, pending_in_lieu_count)
+
+def get_available_lieu_pool_funds(ppmp_items):
+    available_lieu_pool_funds = 0
+    for ppmp_item in ppmp_items.data:
+        available_lieu_pool_funds += ppmp_item["AvailableQuantity"] * ppmp_item["PricePerUnit"]
+    return available_lieu_pool_funds
+
+def get_open_funds(ppmp_items):
+    open_funds = 0
+    for ppmp_item in ppmp_items.data:
+        open_funds += ppmp_item["PlannedQuantity"] * ppmp_item["PricePerUnit"]
+    return open_funds
