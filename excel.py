@@ -186,7 +186,7 @@ def export_formatted_excel(year, options, dean_name):
     default_ws = wb.active
 
     if want_revised: add_revised(wb, year, title, dean_name)
-    if want_supplemental: add_supplemental()
+    if want_supplemental: add_supplemental(wb, fiscal_year, title, dean_name)
     if want_in_lieus: add_in_lieus(wb, fiscal_year, year, dean_name)
     if want_purchase_requests: add_purchase_request(wb, fiscal_year, year, dean_name)
     if want_dashboard_report: add_dashboard_report(wb, fiscal_year, year)
@@ -353,8 +353,184 @@ def add_revised(wb, year, title, dean_name):
         row_end=end_row
     )
 
-def add_supplemental():
-    pass
+def add_supplemental(wb, fiscal_year, year, dean_name):
+    supplementals = private_supabase.table("SUPPLEMENTAL").select("*").eq("FiscalYearID", fiscal_year).execute()
+    if not supplementals.data:
+        return None
+    supplementals = supplementals.data
+    for supplemental in supplementals:
+        supplemental_id = supplemental["SupplementalID"]
+        supplemental_date = pd.to_datetime(supplemental["created_at"])
+        title_date = supplemental_date.strftime('%m-%d-%Y')
+        default_title = f"Supplemental of {title_date}"
+        ws_title = get_unique_sheet_title(wb, default_title)
+
+        ws = wb.create_sheet(ws_title)
+        ws.sheet_view.showGridLines = False
+
+        total_count = 0
+        grand_total_amount = 0
+        start_row = 0
+        end_row = 0
+        start_column = 1
+        end_column = 0
+        start_number_column = 0
+        end_number_column = 0
+        start_decimal_column = 0
+        end_decimal_column = 0
+
+        current_row = 2
+        current_column = 1
+        (
+            current_column,
+            current_row,
+            start_number_column,
+            end_number_column,
+            start_decimal_column,
+            end_decimal_column,
+            end_column,
+        ) = set_revised_header(ws, current_column, current_row, year)
+
+        ppmp_items = private_supabase.table("ADDITIONAL_SUPPLEMENTAL_ITEM").select("*").eq("SupplementalID", supplemental_id).execute()
+        ppmp_items = ppmp_items.data
+        if not ppmp_items:
+            office_supplies_dict = {}
+            office_supplies_dict["Supplemental ABC"] = [
+                {
+                    "Seq.": 1,
+                    "GENERAL DESCRIPTION": "Supplemental ABC",
+                    "Unit of Measure": "Peso",
+                    "January": supplemental["SupplementalABC"],
+                    "TOTAL": supplemental["SupplementalABC"],
+                    "Price as per Catalogue": supplemental["SupplementalABC"],
+                    "TOTAL AMOUNT": supplemental["SupplementalABC"],
+                }
+            ]
+        else:
+            office_supplies = [ppmp_item for ppmp_item in ppmp_items if ppmp_item["PpmpCategory"] == "Office Supply"]
+
+            office_categories = [ppmp_item["ItemCategory"] for ppmp_item in office_supplies]
+            office_categories = list(dict.fromkeys(office_categories))
+            office_supplies_dict = {}
+
+            for office_category in office_categories:
+                category_items = [
+                    item
+                    for item in office_supplies
+                    if item["ItemCategory"] == office_category
+                ]
+
+                office_supplies_dict[office_category] = [
+                    {
+                        "Seq.": i,
+                        "GENERAL DESCRIPTION": item["ItemName"],
+                        "Unit of Measure": item["UnitName"],
+                        "January": item["Quantity"],
+                        "TOTAL": item["Quantity"],
+                        "Price as per Catalogue": item["UnitPrice"],
+                        "TOTAL AMOUNT": item["Quantity"] * item["UnitPrice"],
+                    }
+                    for i, item in enumerate(category_items, start=1)
+                ]
+
+            office_supplies = office_supplies_dict
+
+        office_supplies = office_supplies_dict
+        lab_supplies_dict = {}
+        lab_supplies = [ppmp_item for ppmp_item in ppmp_items if
+                        ppmp_item["PpmpCategory"] == "Laboratory Supply/Equipment"]
+        lab_categories = [ppmp_item["ItemCategory"] for ppmp_item in lab_supplies]
+        lab_categories = list(dict.fromkeys(lab_categories))
+
+        for lab_category in lab_categories:
+            category_items = [
+                item
+                for item in lab_supplies
+                if item["ItemCategory"] == lab_category
+            ]
+
+            lab_supplies_dict[lab_category] = [
+                {
+                    "Seq.": i,
+                    "GENERAL DESCRIPTION": item["ItemName"],
+                    "Unit of Measure": item["UnitName"],
+                    "January": item["Quantity"],
+                    "TOTAL": item["Quantity"],
+                    "Price as per Catalogue": item["UnitPrice"],
+                    "TOTAL AMOUNT": item["Quantity"] * item["UnitPrice"],
+                }
+                for i, item in enumerate(category_items, start=1)
+            ]
+
+        lab_supplies = lab_supplies_dict
+
+        current_row += 2
+        current_column = 1
+
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "OFFICE SUPPLIES"
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+        set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
+                           col_end=current_column + 1)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+
+        start_row = current_row
+        total_count1, grand_total_amount1 = 0, 0
+        total_count2, grand_total_amount2 = 0, 0
+        total_count1, grand_total_amount1, current_row = ppmp_item_category(office_supplies, ws, current_row)
+        if lab_supplies:
+            current_row += 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = "LAB SUPPLIES"
+            ws.merge_cells(
+                f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+            set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
+                               col_end=current_column + 1)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+            total_count2, grand_total_amount2, current_row = ppmp_item_category(lab_supplies, ws, current_row)
+        total_count = total_count1 + total_count2
+        grand_total_amount = grand_total_amount1 + grand_total_amount2
+        current_row += 1
+        current_column = 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "GRAND TOTAL:"
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+        set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",
+                           underline="single")
+
+        current_column = 16
+        ws[f"{num_to_letter(current_column)}{current_row}"] = total_count
+        set_border_to_cell(ws, current_column, current_row)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+        current_column += 2
+        ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
+        set_border_to_cell(ws, current_column, current_row)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+        gray_fill = PatternFill(
+            fill_type="solid",
+            start_color="A6A6A6",
+            end_color="A6A6A6"
+        )
+
+        for cell in ws[current_row]:
+            cell.fill = gray_fill
+
+        end_row = current_row
+
+        current_column, current_row = set_revised_signatories(ws, current_column, current_row, dean_name)
+
+        set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
+        set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
+
+        set_revised_dimensions(ws)
+
+        set_border_to_cell(
+            ws,
+            col_start=start_column,
+            row_start=start_row,
+            col_end=end_column,
+            row_end=end_row
+        )
 
 def add_in_lieus(wb, fiscal_year, year, dean_name):
     in_liues = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year).execute()
