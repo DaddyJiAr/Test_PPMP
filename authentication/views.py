@@ -58,9 +58,8 @@ def login(request):
 
 @api_view(['PUT'])
 def update_password(request):
-    try:
-        user = get_auth_user(request)
-    except:
+    user = get_user(request)
+    if user is None:
         return Response({"error": "User not found"}, status=401)
     req = ["newPassword", "currentPassword", "accessToken", "refreshToken"]
     missing_fields = check_fields(req, request)
@@ -74,8 +73,18 @@ def update_password(request):
         return Response({"error": "New and Old Passwords match"}, status=400)
     try:
         client = create_supabase()
+        print(user, "USER")
+        print("1. Verifying current password...")
+
+        client.auth.sign_in_with_password({
+            "email": user["EmailAddress"],
+            "password": current_password
+        })
+        print("2. Current password verified")
+
         client.auth.set_session(access_token, refresh_token)
-        client.auth.update_user({
+        print("3. Session set")
+        response = client.auth.update_user({
             "password": new_password
         })
         if response is not None:
@@ -84,7 +93,6 @@ def update_password(request):
             return Response({"error": "Error updating password"}, status=500)
     except AuthApiError:
         return Response({"error": "Invalid login credentials", "user": user}, status=401)
-    return Response(user.email)
 
 @api_view(['POST'])
 def forgot_password(request):
