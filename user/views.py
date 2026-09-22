@@ -60,6 +60,8 @@ def create_user(request):
         return Response({"error": "User not found"}, status=401)
     required_fields = ["email", "password", "fullName", "role"]
     missing_fields = check_fields(required_fields, request)
+    if not check_admin(request):
+        return Response({"error": "Unauthorized access"}, status=401)
     try:
         if missing_fields:
             return Response({"error": "Required fields missing", "missingFields": missing_fields}, status=400)
@@ -103,7 +105,7 @@ def update_user_status(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    if check_admin(request):
+    if not check_admin(request):
         return Response({"error": "Unauthorized access"}, status=401)
     else:
         required_fields = ["userId", "status",]
@@ -129,7 +131,7 @@ def promote_user(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    if check_admin(request):
+    if not check_admin(request):
         return Response({"error": "Unauthorized access"}, status=401)
     else:
         missing_fields = check_fields(["userId"], request)
@@ -161,7 +163,7 @@ def delete_user(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    if check_admin(request):
+    if not check_admin(request):
         return Response({"error": "Unauthorized access"}, status=401)
     else:
         try:
@@ -173,8 +175,11 @@ def delete_user(request):
         user_id = request.data.get("userId")
         try:
             print(f"deleting user {user_id}")
+            print("auth delete")
             auth_del = private_supabase.auth.admin.delete_user(user_id)
+            print("db delete")
             response = private_supabase.table("USER").delete().eq("UserID", user_id).execute()
+            print("complete delete")
         except Exception as e:
             return Response({"error": "Error deleting user", "message": str(e)}, status=500)
         return Response({"status": "success"}, status=200)

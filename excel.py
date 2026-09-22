@@ -43,13 +43,14 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
 
     current_category = None
     processed_rows = []
+    left_col = name_column - 1 if name_column > 0 else 0
 
     for _, row in df.iterrows():
         description = row[name_column]
         unit = row[unit_column]
         quantity = row[quantity_column]
         price = row[price_per_unit_column]
-        left = row[name_column - 1]
+        left = row[left_col]
         right = row[name_column]
 
         name = None
@@ -72,7 +73,7 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
             current_category = name
             continue
         elif(
-            pd.notna(row[name_column-1])
+            pd.notna(row[left_col])
             and is_empty_or_zero(unit)
             and is_empty_or_zero(quantity)
             and is_empty_or_zero(price)
@@ -113,7 +114,7 @@ def testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column
                 "price": row["CatalogPrice"],
             })
         raise ValueError({
-            "message": "Invalid numeric values found in the Excel file.",
+            "error": "Invalid numeric values found in the Excel file.",
             "rows": errors,
         })
 
@@ -173,7 +174,7 @@ def upload_excel(df, total_ABC, year, ppmp_category="Office Supply"):
 
 def export_formatted_excel(year, options, dean_name):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).maybe_single().execute()
-    if not fiscal_year.data:
+    if not fiscal_year:
         return Response({"error": "Fiscal year missing"},status=404)
     fiscal_year = fiscal_year.data["FiscalYearID"]
     title = "CICT-PPMP-" + year

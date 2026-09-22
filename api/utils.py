@@ -1,6 +1,9 @@
+from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 from dotenv import load_dotenv
 import os
+import tempfile
+import joblib
 from supabase import create_client
 
 load_dotenv()
@@ -77,7 +80,9 @@ def get_ppmp_items(year):
 
 def get_dashboard_cards(year):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("TotalABC", "FiscalYearID").eq("Year",
-                                                                                              year).single().execute()
+                                                                                              year).maybe_single().execute()
+    if fiscal_year is None:
+        raise APIException("No fiscal year found")
     total_annual_budget = fiscal_year.data["TotalABC"]
     ppmp_items = private_supabase.table("PPMP_ITEM").select(
         "ItemID, PlannedQuantity, PendingQuantity, FulfilledQuantity, AvailableQuantity, PricePerUnit").eq(
@@ -145,3 +150,18 @@ def get_open_funds(ppmp_items):
     for ppmp_item in ppmp_items.data:
         open_funds += ppmp_item["PlannedQuantity"] * ppmp_item["PricePerUnit"]
     return open_funds
+
+def load_ai_model():
+    data = private_supabase.storage.from_(
+        "in_lieu_model"
+    ).download("in_lieu_model.pkl")
+
+    model_path = os.path.join(
+        tempfile.gettempdir(),
+        "in_lieu_model.pkl"
+    )
+
+    with open(model_path, "wb") as f:
+        f.write(data)
+
+    return joblib.load(model_path)

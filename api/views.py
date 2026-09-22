@@ -3,6 +3,7 @@ import json
 import joblib
 from ortools.sat.python import cp_model
 from postgrest import APIError
+from rest_framework.exceptions import APIException
 from rest_framework.response import Response
 from rest_framework.decorators import api_view
 from datetime import datetime
@@ -11,7 +12,7 @@ import user
 from ml import reverse_knapsack, get_ai_probabilities, model, save_model
 from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items, public_supabase, get_dashboard_cards, \
-    get_available_lieu_pool_funds
+    get_available_lieu_pool_funds, load_ai_model, check_admin
 from excel import testingPPMP, upload_excel, export_formatted_excel
 from smart_suggest.ml_suggestion import MLSuggest
 import pandas as pd
@@ -63,6 +64,11 @@ def create_procurement_log(entity_type, action_type, fiscal_year, user_fullname,
             description = f"PPMP list for Fiscal Year {fiscal_year} uploaded"
         elif action_type == "export":
             description = f"PPMP list for Fiscal Year {fiscal_year} exported"
+    if entity_type == "Supplemental":
+        if action_type == "upload":
+            description = f"New supplemental list for Fiscal Year {fiscal_year} uploaded"
+        elif action_type == "export":
+            description = f"Supplemental lists for Fiscal Year {fiscal_year} exported"
     elif entity_type == "Purchase Request":
         if action_type == "requested":
             description = f"Purchase request of {quantity1} {item_name1} is requested"
@@ -280,6 +286,7 @@ def get_ppmp_preview(request):
     unit_column = int(request.POST["unit"])
     quantity_column = int(request.POST["quantity"])
     price_per_unit_column = int(request.POST["unitPrice"])
+    print(name_column, quantity_column, unit_column, price_per_unit_column, "COLUMNS")
     excel_file2 = None
     if isDualMode is True:
         excel_file2 = request.FILES["file2"]
@@ -305,8 +312,8 @@ def get_ppmp_preview(request):
         else:
             df[0], grand_total_amount, exists = testingPPMP(excel_file, row_start, name_column, unit_column,
                                                          quantity_column, price_per_unit_column, year, "Office Supply")
-    except ValueError as e:
-        return Response({"error": e.args[0]}, status=400, )
+    except (ValueError, TypeError) as e:
+        return Response({"error": "Invalid column or start row.", "message": e.args[0]}, status=400, )
     if float(total_abc) < grand_total_amount:
         return Response({"error": "Total ABC is less than grand total"}, status=400, )
     # e = upload_excel(df[0], grand_total_amount, year, "Office Supply")
@@ -363,8 +370,8 @@ def upload(request):
             exists = exists1
         else:
             df[0], grand_total_amount, exists = testingPPMP(excel_file, row_start, name_column, unit_column, quantity_column, price_per_unit_column, year, "Office Supply")
-    except ValueError as e:
-        return Response({"error": e.args[0]}, status=400, )
+    except (ValueError, TypeError) as e:
+        return Response({"error": "Invalid column or start row.", "message": e.args[0]}, status=400, )
     if float(total_abc) < grand_total_amount:
         return Response({"error": "Total ABC is less than grand total"}, status=400, )
     e = upload_excel(df[0], total_abc, year, "Office Supply")
@@ -380,7 +387,7 @@ def export(request):
         return Response({"error": "User not found"}, status=401)
     year = request.POST["year"]
     options = request.POST["options"]
-    create_procurement_log("PPMP", "export", year, "JIAR", "")
+    create_procurement_log("PPMP", "export", year, user["FullName"], "")
     return export_formatted_excel(year, options, get_admin())
 
 @api_view(['GET'])
@@ -408,8 +415,11 @@ def dashboard_cards(request):
     except Exception as e:
         return Response({"error": "Invalid fields"}, status=400)
     year = request.POST["year"]
-    (total_annual_budget, committed_funds, available_lieu_pool_funds, open_funds, requested_funds,
-     arrived_funds, pending_in_lieu_count) = get_dashboard_cards(year)
+    try:
+        (total_annual_budget, committed_funds, available_lieu_pool_funds, open_funds, requested_funds,
+         arrived_funds, pending_in_lieu_count) = get_dashboard_cards(year)
+    except APIException as e:
+        return Response({"error": "Fiscal year not found"}, status=404)
 
     logs = private_supabase.table("PROCUREMENT_LOG").select("*").execute()
     logs = [
@@ -600,6 +610,13 @@ def procurement_data(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "Invalid token"}, status=401)
+    required_fields = ["year"]
+    missing_fields = check_fields(required_fields, request)
+    try:
+        if missing_fields:
+            return Response({"error": "Missing fields", "missingFields": missing_fields}, status=400)
+    except Exception as e:
+        return Response({"error": "Invalid fields"}, status=400)
     year = request.POST["year"]
     ppmp_items = get_ppmp_items(year)
     total_planned_item_count, total_available_item_count, total_pending_item_count, total_fulfilled_item_count = get_headers(ppmp_items)
@@ -701,7 +718,13 @@ def create_in_lieu_request(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-
+    required_fields = ["payload"]
+    missing_fields = check_fields(required_fields, request)
+    try:
+        if missing_fields:
+            return Response({"error": "Missing fields", "missingFields": missing_fields}, status=400)
+    except Exception as e:
+        return Response({"error": "Invalid fields"}, status=400)
     payload = json.loads(request.POST.get("payload"))
     in_lieu_items = payload["itemsToReduce"]
     in_lieu_addition = payload["itemsToProcure"]
@@ -1129,7 +1152,7 @@ def update_signatories(request):
     return Response({"status": "success"}, status=200)
 
 @api_view(['POST'])
-def test_ml(request):
+def get_ml_suggestions(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
@@ -1144,7 +1167,7 @@ def test_ml(request):
     year = request.POST["year"]
 
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("TotalABC, FiscalYearID").eq("Year",
-                                                                                            year).single().execute()
+                                                                                            year).maybe_single().execute()
     if fiscal_year is None or fiscal_year.data is None:
         return Response({"error": "Fiscal year not found"}, status=404)
 
@@ -1152,6 +1175,8 @@ def test_ml(request):
     total_annual_budget = float(fiscal_year.data.get("TotalABC", 0) or 0)
 
     target_budget = float(request.POST["targetBudget"])
+    if target_budget <= 0:
+        return Response({"error": "Target budget must be greater than zero"}, status=400)
 
     ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year_id).execute()
     ppmp_items = ppmp_items_response.data
@@ -1301,10 +1326,7 @@ def get_importances(request):
         return Response({"error": "Year query parameter is required"}, status=400)
 
     try:
-        data = private_supabase.storage.from_("in_lieu_model").download("in_lieu_model.pkl")
-        with open("/tmp/in_lieu_model.pkl", "wb") as f:
-            f.write(data)
-        database_model = joblib.load("/tmp/in_lieu_model.pkl")
+        database_model = load_ai_model()
         importances = database_model.feature_importances_
 
         card1_history_unutilized = round((importances[0] + importances[1]) * 100, 2)
@@ -1378,6 +1400,8 @@ def retrain_ml(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
+    if not check_admin(request):
+        return Response({"error": "Unauthorized access"}, status=401)
 
     in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status", "approved").execute()
     in_lieus = in_lieus.data
@@ -1520,6 +1544,13 @@ def add_supplemental(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "Invalid token"}, status=401)
+    required_fields = ["year", "description", "additionalBudget"]
+    missing_fields = check_fields(required_fields, request)
+    try:
+        if missing_fields:
+            return Response({"error": "Missing fields", "missingFields": missing_fields}, status=400)
+    except Exception as e:
+        return Response({"error": "Invalid fields"}, status=400)
     user_id = user["UserID"]
     year = request.POST["year"]
     description = request.POST["description"]
@@ -1596,4 +1627,5 @@ def add_supplemental(request):
                     "AvailableQuantity": update_data["AvailableQuantity"],
                     "PlannedQuantity": update_data["PlannedQuantity"],
                 }).eq("ItemID", update_item_id).execute()
+    create_procurement_log("Supplemental", "upload", year, user["FullName"], "")
     return Response({"status": "success"}, status=200)

@@ -1,4 +1,7 @@
+import os
+
 import joblib
+import tempfile
 from ortools.sat.python import cp_model
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
@@ -6,7 +9,7 @@ from sklearn.ensemble import RandomForestClassifier
 import pandas as pd
 from ortools.sat.python import cp_model
 
-from api.utils import private_supabase
+from api.utils import private_supabase, load_ai_model
 
 
 def get_x_y(training_rows):
@@ -42,10 +45,7 @@ def test(X_test, Y_test, model):
     print(accuracy_score(Y_test, predictions))
 
 def get_ai_probabilities(live_data):
-    data = private_supabase.storage.from_("in_lieu_model").download("in_lieu_model.pkl")
-    with open("/tmp/in_lieu_model.pkl", "wb") as f:
-        f.write(data)
-    database_model = joblib.load("/tmp/in_lieu_model.pkl")
+    database_model = load_ai_model()
     return database_model.predict_proba(live_data)
 
 def save_model(model):
