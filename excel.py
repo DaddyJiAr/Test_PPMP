@@ -379,6 +379,9 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
         end_number_column = 0
         start_decimal_column = 0
         end_decimal_column = 0
+        no_border_rows = []
+        no_border_cells = []
+        no_border_partial_rows = []
 
         current_row = 2
         current_column = 1
@@ -394,20 +397,23 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
 
         ppmp_items = private_supabase.table("ADDITIONAL_SUPPLEMENTAL_ITEM").select("*").eq("SupplementalID", supplemental_id).execute()
         ppmp_items = ppmp_items.data
+        has_items = False
         if not ppmp_items:
             office_supplies_dict = {}
             office_supplies_dict["Supplemental ABC"] = [
                 {
                     "Seq.": 1,
-                    "GENERAL DESCRIPTION": "Supplemental ABC",
-                    "Unit of Measure": "Peso",
+                    "GENERAL DESCRIPTION": "Funds Added",
+                    "Unit of Measure": "PHP",
                     "January": supplemental["SupplementalABC"],
                     "TOTAL": supplemental["SupplementalABC"],
                     "Price as per Catalogue": supplemental["SupplementalABC"],
                     "TOTAL AMOUNT": supplemental["SupplementalABC"],
                 }
             ]
+            has_items = False
         else:
+            has_items = True
             office_supplies = [ppmp_item for ppmp_item in ppmp_items if ppmp_item["PpmpCategory"] == "Office Supply"]
 
             office_categories = [ppmp_item["ItemCategory"] for ppmp_item in office_supplies]
@@ -433,7 +439,6 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
                     }
                     for i, item in enumerate(category_items, start=1)
                 ]
-
             office_supplies = office_supplies_dict
 
         office_supplies = office_supplies_dict
@@ -467,17 +472,20 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
 
         current_row += 2
         current_column = 1
-
-        ws[f"{num_to_letter(current_column)}{current_row}"] = "OFFICE SUPPLIES"
-        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
-        set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
-                           col_end=current_column + 1)
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+        if has_items:
+            ws[f"{num_to_letter(current_column)}{current_row}"] = "OFFICE SUPPLIES"
+            ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+            set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
+                               col_end=current_column + 1)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
 
         start_row = current_row
         total_count1, grand_total_amount1 = 0, 0
         total_count2, grand_total_amount2 = 0, 0
-        total_count1, grand_total_amount1, current_row = ppmp_item_category(office_supplies, ws, current_row)
+        total_count1, grand_total_amount1, current_row = supplemental_item_category(
+            office_supplies, ws, current_row, has_items, no_border_rows, no_border_cells, no_border_partial_rows
+        )
+
         if lab_supplies:
             current_row += 1
             ws[f"{num_to_letter(current_column)}{current_row}"] = "LAB SUPPLIES"
@@ -486,35 +494,42 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
             set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
                                col_end=current_column + 1)
             set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
-            total_count2, grand_total_amount2, current_row = ppmp_item_category(lab_supplies, ws, current_row)
+            total_count2, grand_total_amount2, current_row = supplemental_item_category(lab_supplies, ws, current_row, True)
         total_count = total_count1 + total_count2
         grand_total_amount = grand_total_amount1 + grand_total_amount2
-        current_row += 1
-        current_column = 1
-        ws[f"{num_to_letter(current_column)}{current_row}"] = "GRAND TOTAL:"
-        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
-        set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",
-                           underline="single")
 
-        current_column = 16
-        ws[f"{num_to_letter(current_column)}{current_row}"] = total_count
-        set_border_to_cell(ws, current_column, current_row)
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+        if has_items:
+            current_row += 1
+            current_column = 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = "GRAND TOTAL:"
+            ws.merge_cells(
+                f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+            set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",
+                               underline="single")
 
-        current_column += 2
-        ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
-        set_border_to_cell(ws, current_column, current_row)
-        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+            current_column = 16
+            ws[f"{num_to_letter(current_column)}{current_row}"] = total_count
+            set_border_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
 
-        gray_fill = PatternFill(
-            fill_type="solid",
-            start_color="A6A6A6",
-            end_color="A6A6A6"
-        )
+            current_column += 2
+            ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
+            set_border_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
 
-        for cell in ws[current_row]:
-            cell.fill = gray_fill
+            gray_fill = PatternFill(fill_type="solid", start_color="A6A6A6", end_color="A6A6A6")
+            for cell in ws[current_row]:
+                cell.fill = gray_fill
+
+            current_row += 1
+            current_column = 2
+            ws[f"{num_to_letter(current_column)}{current_row}"] = "in Additional of Budget"
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+            no_border_rows.append(current_row)
+
+            current_row = add_supplemental_budget(ws, supplemental["SupplementalABC"], current_row, no_border_cells,
+                                                  no_border_rows, no_border_partial_rows)
 
         end_row = current_row
 
@@ -532,6 +547,12 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
             col_end=end_column,
             row_end=end_row
         )
+        for r in no_border_rows:
+            clear_border_to_cell(ws, start_column, r, end_column, r)
+        for r, c in no_border_cells:
+            clear_border_to_cell(ws, c, r)
+        for r, start_col in no_border_partial_rows:
+            clear_border_to_cell(ws, start_col, r, end_column, r)
 
 def add_in_lieus(wb, fiscal_year, year, dean_name):
     in_liues = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year).execute()
@@ -574,6 +595,8 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
         end_number_column = 0
         start_decimal_column = 0
         end_decimal_column = 0
+        no_border_rows = []
+        no_border_cells = []
 
 
         current_row = 1
@@ -619,7 +642,7 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
             start_decimal_column,
             end_decimal_column,
             end_column,
-        ) = add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, current_row)
+        ) = add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, current_row, no_border_rows, no_border_cells)
 
         end_row = current_row
         set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
@@ -634,6 +657,8 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
             col_end=end_column,
             row_end=end_row
         )
+        for r in no_border_rows:
+            clear_border_to_cell(ws, start_column, r, end_column, r)
 
         set_in_lieu_signatories(ws, current_column, current_row, dean_name)
 
@@ -760,6 +785,14 @@ def set_border_to_cell(ws, col_start, row_start,
                 bottom=Side(style=bottom) if r == row_end else Side(style="thin"),
             )
             ws.cell(row=r, column=c).border = border
+
+def clear_border_to_cell(ws, col_start, row_start, col_end=None, row_end=None):
+    col_end = col_end or col_start
+    row_end = row_end or row_start
+    no_side = Side(style=None)
+    for r in range(row_start, row_end + 1):
+        for c in range(col_start, col_end + 1):
+            ws.cell(row=r, column=c).border = Border(left=no_side, right=no_side, top=no_side, bottom=no_side)
 
 def set_bottom_border(ws, col_start, row, col_end=None, style="thin"):
     col_end = col_end or col_start
@@ -1594,6 +1627,172 @@ def ppmp_item_category(ppmp_category, ws, current_row):
 
     return total_count, grand_total_amount, current_row
 
+def supplemental_item_category(ppmp_category, ws, current_row, has_items, no_border_rows=None, no_border_cells=None, no_border_partial_rows=None):
+    if no_border_rows is None:
+        no_border_rows = []
+    if no_border_cells is None:
+        no_border_cells = []
+    if no_border_partial_rows is None:
+        no_border_partial_rows = []
+
+    total_count = 0
+    grand_total_amount = 0
+    if not has_items:
+        current_column = 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "GRAND TOTAL:"
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+        set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",
+                           underline="single")
+
+        gray_fill = PatternFill(fill_type="solid", start_color="A6A6A6", end_color="A6A6A6")
+        for cell in ws[current_row]:
+            cell.fill = gray_fill
+
+        current_row += 1
+        current_column = 2
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "in Additional of Budget"
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+        no_border_rows.append(current_row)
+
+        funds = ppmp_category["Supplemental ABC"][0]
+        current_row = add_supplemental_budget(ws, funds["TOTAL"], current_row, no_border_cells, no_border_rows,
+                                              no_border_partial_rows)
+    else:
+        for item_category, items in ppmp_category.items():
+            current_row += 1
+            current_column = 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = item_category
+            ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+            set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, True, "center", "center")
+            category_total_count = 0
+            category_grand_total_amount = 0
+            for ppmp_item in items:
+                current_row += 1
+                current_column = 1
+                ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["Seq."]
+                set_border_to_cell(ws, current_column, current_row)
+                set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+                current_column += 1
+                ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["GENERAL DESCRIPTION"]
+                set_border_to_cell(ws, current_column, current_row)
+                set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", wrap_text=True)
+
+                current_column += 1
+                ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["Unit of Measure"]
+                set_border_to_cell(ws, current_column, current_row)
+                set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+                current_column += 1
+                ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["January"]
+                set_border_to_cell(ws, current_column, current_row)
+                set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+                current_column += 1
+                for i in range(11):
+                    ws[f"{num_to_letter(current_column)}{current_row}"] = ""
+                    set_border_to_cell(ws, current_column, current_row)
+                    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+                    current_column += 1
+
+                ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["TOTAL"]
+                set_border_to_cell(ws, current_column, current_row)
+                set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+                category_total_count += ppmp_item["TOTAL"]
+                total_count += ppmp_item["TOTAL"]
+
+                current_column += 1
+                ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["Price as per Catalogue"]
+                set_border_to_cell(ws, current_column, current_row)
+                set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center", wrap_text=True)
+
+                current_column += 1
+                ws[f"{num_to_letter(current_column)}{current_row}"] = ppmp_item["TOTAL AMOUNT"]
+                set_border_to_cell(ws, current_column, current_row)
+                set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+                category_grand_total_amount += ppmp_item["TOTAL AMOUNT"]
+                grand_total_amount += ppmp_item["TOTAL AMOUNT"]
+
+            current_row += 1
+            current_column = 1
+            ws[f"{num_to_letter(current_column)}{current_row}"] = "Subtotal:"
+            ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+            set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, True, "center", "center",)
+
+            current_column += 3
+            ws[f"{num_to_letter(current_column)}{current_row}"] = category_total_count
+            set_border_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center", )
+
+            current_column = 16
+            ws[f"{num_to_letter(current_column)}{current_row}"] = category_total_count
+            set_border_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+            current_column += 2
+            ws[f"{num_to_letter(current_column)}{current_row}"] = category_grand_total_amount
+            set_border_to_cell(ws, current_column, current_row)
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+    return total_count, grand_total_amount, current_row
+
+def add_supplemental_budget(ws, quantity, current_row, no_border_cells=None, no_border_rows=None, no_border_partial_rows=None):
+    if no_border_cells is None:
+        no_border_cells = []
+    if no_border_rows is None:
+        no_border_rows = []
+    if no_border_partial_rows is None:
+        no_border_partial_rows = []
+
+    current_column = 1
+    current_row += 1
+    header_row = current_row
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Quantity"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Item"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Unit of Measurement"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Total"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    no_border_partial_rows.append((header_row, current_column + 1))  # clear everything after "Total"
+
+    current_column = 1
+    current_row += 1
+    value_row = current_row
+    ws[f"{num_to_letter(current_column)}{current_row}"] = quantity
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Funds Added"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "PHP"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    current_column += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = quantity
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    no_border_partial_rows.append((current_row, current_column + 1))  # clear everything after the value's "Total" column
+
+    current_row += 1
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "TOTAL AMOUNT:"
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 2)}{current_row}")
+    set_border_to_cell(ws, current_column, current_row, col_end=current_column + 2)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center")
+
+    current_column += 3
+    ws[f"{num_to_letter(current_column)}{current_row}"] = quantity
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center")
+    no_border_partial_rows.append((current_row, current_column + 1))  # clear everything after "Total"
+
+    return current_row
+
 def add_in_lieu_additions(additions, ws, current_row):
     additions_list = []
     total_count = 0
@@ -1671,7 +1870,11 @@ def add_in_lieu_additions(additions, ws, current_row):
     return current_row
 
 
-def add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, current_row):
+def add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, current_row, no_border_cells=None, no_border_rows=None):
+    if no_border_rows is None:
+        no_border_rows = []
+    if no_border_cells is None:
+        no_border_cells = []
     grand_total = 0
 
     in_lieu_item_list = []
@@ -1692,7 +1895,7 @@ def add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, curren
     current_column = 2
     ws[f"{num_to_letter(current_column)}{current_row}"] = "in lieu of"
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
-
+    no_border_rows.append(current_row)
     current_row += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Item"
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
