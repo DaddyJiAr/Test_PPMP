@@ -60,7 +60,7 @@ def create_user(request):
         return Response({"error": "User not found"}, status=401)
     required_fields = ["email", "password", "fullName", "role"]
     missing_fields = check_fields(required_fields, request)
-    if not check_admin(request):
+    if check_admin(request):
         return Response({"error": "Unauthorized access"}, status=401)
     try:
         if missing_fields:
@@ -105,7 +105,7 @@ def update_user_status(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    if not check_admin(request):
+    if check_admin(request):
         return Response({"error": "Unauthorized access"}, status=401)
     else:
         required_fields = ["userId", "status",]
@@ -131,7 +131,7 @@ def promote_user(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    if not check_admin(request):
+    if check_admin(request):
         return Response({"error": "Unauthorized access"}, status=401)
     else:
         missing_fields = check_fields(["userId"], request)
@@ -163,7 +163,7 @@ def delete_user(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    if not check_admin(request):
+    if check_admin(request):
         return Response({"error": "Unauthorized access"}, status=401)
     else:
         try:

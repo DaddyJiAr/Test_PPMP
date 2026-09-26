@@ -62,7 +62,7 @@ def check_admin(request):
     if user is None:
         return False
     else:
-        return user["Role"] != "Admin"
+        return user["Role"] == "Admin"
 
 def check_fields(required_fields, request):
     missing_fields = [
