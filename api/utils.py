@@ -57,8 +57,7 @@ def check_user(request):
         return True
 
 def check_admin(request):
-    token = get_token(request)
-    user = get_user(token)
+    user = get_user(request)
     if user is None:
         return False
     else:

@@ -1400,7 +1400,7 @@ def retrain_ml(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
-    if check_admin(request):
+    if not check_admin(request):
         return Response({"error": "Unauthorized access"}, status=401)
 
     in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status", "approved").execute()
