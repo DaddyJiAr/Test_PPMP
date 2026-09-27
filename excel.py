@@ -516,7 +516,7 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
             current_column += 2
             ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
             set_border_to_cell(ws, current_column, current_row)
-            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center")
 
             gray_fill = PatternFill(fill_type="solid", start_color="A6A6A6", end_color="A6A6A6")
             for cell in ws[current_row]:
@@ -533,12 +533,12 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
 
         end_row = current_row
 
-        current_column, current_row = set_revised_signatories(ws, current_column, current_row, dean_name)
+        current_column, current_row = set_supplemental_signatories(ws, current_column, current_row, dean_name)
 
         set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
         set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
 
-        set_revised_dimensions(ws)
+        set_supplemental_dimensions(ws)
 
         set_border_to_cell(
             ws,
@@ -621,7 +621,9 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
 
         start_row = current_row + 1
         current_column = 1
-        current_row = add_in_lieu_additions(in_lieu_additions, ws, current_row)
+
+        month = in_lieu_date.month
+        current_row = add_in_lieu_additions(in_lieu_additions, ws, current_row, month)
         end_row = current_row
         set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
         set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
@@ -634,6 +636,7 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
             row_end=end_row
         )
 
+        start_row = current_row + 1
         (
             current_column,
             current_row,
@@ -642,8 +645,7 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
             start_decimal_column,
             end_decimal_column,
             end_column,
-        ) = add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, current_row, no_border_rows, no_border_cells)
-
+        ) = add_in_lieu_items(in_lieu_items, ppmp_items, open_funds_utilized, ws, current_row, no_border_rows=no_border_rows)
         end_row = current_row
         set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
         set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
@@ -843,6 +845,24 @@ def set_revised_dimensions(ws):
         ws.row_dimensions[row].height = 20
     return
 
+def set_supplemental_dimensions(ws):
+    current_column = 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 7
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 33
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 20
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 13
+    current_column += 1
+    for i in range(12):
+        ws.column_dimensions[num_to_letter(current_column)].width = 8
+        current_column += 1
+
+    ws.column_dimensions[num_to_letter(current_column)].width = 14
+    current_column += 1
+    ws.column_dimensions[num_to_letter(current_column)].width = 24
+
 def set_in_lieu_dimensions(ws):
     current_column = 1
     ws.column_dimensions[num_to_letter(current_column)].width = 4
@@ -1011,7 +1031,7 @@ def set_in_lieu_header(ws, current_column, current_row):
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     set_border_to_cell(ws, current_column, current_row,col_end=current_column + 13)
     current_column += 13
-    start_decimal_column = current_row
+    start_decimal_column = current_column
     ws[f"{num_to_letter(current_column)}{current_row}"] = "PRICE \nCATALOGUE"
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", wrap_text=True)
     set_border_to_cell(ws, current_column, current_row, row_end=current_row + 1)
@@ -1020,7 +1040,7 @@ def set_in_lieu_header(ws, current_column, current_row):
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     set_border_to_cell(ws, current_column, current_row, row_end=current_row + 1)
     end_number_column = current_column
-    end_decimal_column = current_row
+    end_decimal_column = current_column
     end_column = current_column
 
     current_row += 1
@@ -1336,6 +1356,26 @@ def set_revised_signatories(ws, current_column, current_row, dean_name):
 
     current_column += 4
     ws[f"{num_to_letter(current_column)}{current_row}"] = "University President"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    return current_column, current_row
+
+def set_supplemental_signatories(ws, current_column, current_row, dean_name):
+
+    current_row += 2
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Created by:"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
+
+    current_row += 2
+    current_column = 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = dean_name
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center", )
+
+    current_column = 1
+    current_row += 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "Dean-CICT"
     set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center", )
 
     return current_column, current_row
@@ -1735,7 +1775,7 @@ def supplemental_item_category(ppmp_category, ws, current_row, has_items, no_bor
             current_column += 2
             ws[f"{num_to_letter(current_column)}{current_row}"] = category_grand_total_amount
             set_border_to_cell(ws, current_column, current_row)
-            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+            set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center", )
 
     return total_count, grand_total_amount, current_row
 
@@ -1751,33 +1791,33 @@ def add_supplemental_budget(ws, quantity, current_row, no_border_cells=None, no_
     current_row += 1
     header_row = current_row
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Quantity"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Item"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Unit of Measurement"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Total"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "left", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
     no_border_partial_rows.append((header_row, current_column + 1))  # clear everything after "Total"
 
     current_column = 1
     current_row += 1
     value_row = current_row
     ws[f"{num_to_letter(current_column)}{current_row}"] = quantity
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "Funds Added"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = "PHP"
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
     current_column += 1
     ws[f"{num_to_letter(current_column)}{current_row}"] = quantity
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "left", "center")
-    no_border_partial_rows.append((current_row, current_column + 1))  # clear everything after the value's "Total" column
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+    no_border_partial_rows.append((current_row, current_column + 1))
 
     current_row += 1
     current_column = 1
@@ -1788,16 +1828,18 @@ def add_supplemental_budget(ws, quantity, current_row, no_border_cells=None, no_
 
     current_column += 3
     ws[f"{num_to_letter(current_column)}{current_row}"] = quantity
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center")
-    no_border_partial_rows.append((current_row, current_column + 1))  # clear everything after "Total"
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    no_border_partial_rows.append((current_row, current_column + 1))
 
     return current_row
 
-def add_in_lieu_additions(additions, ws, current_row):
+def add_in_lieu_additions(additions, ws, current_row, month):
     additions_list = []
     total_count = 0
     grand_total_amount = 0
     current_column = 1
+    months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC", "TOTAL"]
+    month_index = len(months) - 1
     for i, addition in enumerate(additions):
         total_count += addition["Quantity"]
         grand_total_amount += addition["Quantity"] * addition["UnitPrice"]
@@ -1805,7 +1847,7 @@ def add_in_lieu_additions(additions, ws, current_row):
             "NO.": i + 1,
             "GENERAL DESCRIPTION": addition["ItemName"],
             "UNIT OF MEASUREMENT": addition["UnitName"],
-            "JAN": addition["Quantity"],
+            months[month_index]: addition["Quantity"],
             "TOTAL": addition["Quantity"],
             "PRICE CATALOGUE": addition["UnitPrice"],
             "AMOUNT": addition["Quantity"] * addition["UnitPrice"],
@@ -1829,12 +1871,17 @@ def add_in_lieu_additions(additions, ws, current_row):
         set_border_to_cell(ws, current_column, current_row)
         set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
 
-        current_column += 1
-        ws[f"{num_to_letter(current_column)}{current_row}"] = addition["JAN"]
+        current_column += month
+        ws[f"{num_to_letter(current_column)}{current_row}"] = addition[months[month_index]]
         set_border_to_cell(ws, current_column, current_row)
         set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
 
-        current_column += 13
+        current_column += 13 - month
+        ws[f"{num_to_letter(current_column)}{current_row}"] = addition["TOTAL"]
+        set_border_to_cell(ws, current_column, current_row)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "center", "center")
+
+        current_column += 1
         ws[f"{num_to_letter(current_column)}{current_row}"] = addition["PRICE CATALOGUE"]
         set_border_to_cell(ws, current_column, current_row)
         set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, False, False, "right", "center")
@@ -1859,7 +1906,7 @@ def add_in_lieu_additions(additions, ws, current_row):
     current_column += 2
     ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
     set_border_to_cell(ws, current_column, current_row)
-    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "right", "center")
     gray_fill = PatternFill(
         fill_type="solid",
         start_color="D8D8D8",
