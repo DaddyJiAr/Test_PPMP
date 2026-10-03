@@ -21,7 +21,7 @@ def get_model_metrics():
 
 def compare_models(X_train, X_test, Y_train, Y_test, use_model="RandomForest"):
     candidates = {
-        "RandomForest": RandomForestClassifier(random_state=42),
+        "RandomForest": RandomForestClassifier(random_state=42, n_estimators=100, max_depth=3, min_samples_leaf=5),
         "DecisionTree": DecisionTreeClassifier(random_state=42),
         "LogisticRegression": LogisticRegression(max_iter=1000),
     }
@@ -65,13 +65,13 @@ def split(X, Y):
     X_train, X_test, Y_train, y_test = train_test_split(
         X,
         Y,
-        test_size=0.2,
+        test_size=0.5,
         random_state=42
     )
     return X_train, X_test, Y_train, y_test
 
 def model(X_train, Y_train):
-    model = RandomForestClassifier(random_state=42)
+    model = RandomForestClassifier(random_state=42, n_estimators=100, max_depth=3, min_samples_leaf=5)
     model.fit(X_train, Y_train)
     return model
 

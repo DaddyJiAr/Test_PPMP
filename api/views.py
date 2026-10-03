@@ -1,4 +1,5 @@
 import json
+import pickle
 
 import joblib
 from google.protobuf import timestamp
@@ -1370,82 +1371,107 @@ def get_importances(request):
 
 @api_view(['POST'])
 def retrain_ml(request):
-    user = get_user(request)
-    if user is None:
-        return Response({"error": "User not found"}, status=401)
-    if not check_admin(request):
-        return Response({"error": "Unauthorized access"}, status=401)
+   user = get_user(request)
+   if user is None:
+       return Response({"error": "User not found"}, status=401)
+   if not check_admin(request):
+       return Response({"error": "Unauthorized access"}, status=401)
 
-    try:
-        threshold = float(request.POST.get('utilizationThreshold', 0.50))
-    except ValueError:
-        threshold = 0.50
 
-    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status",
-                                                                                          "approved").execute()
-    in_lieus = in_lieus.data
-    in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
+   try:
+       threshold = float(request.POST.get('utilizationThreshold', 0.50))
+   except ValueError:
+       threshold = 0.50
 
-    in_lieu_items = []
-    if in_lieu_ids:
-        in_lieu_items_response = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID",
-                                                                                        in_lieu_ids).execute()
-        in_lieu_items = in_lieu_items_response.data
 
-    in_lieu_item_quantity = {}
-    for in_lieu_item in in_lieu_items:
-        item_id = str(in_lieu_item["ItemID"])
-        raw_qty = in_lieu_item.get("QuantityReduced")
-        qty = int(raw_qty) if raw_qty is not None else 0
-        in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
+   in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status",
+                                                                                         "approved").execute()
+   in_lieus = in_lieus.data
+   in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
 
-    ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").execute()
-    ppmp_items = ppmp_items_response.data
 
-    X_train_raw = []
-    Y_train = []
+   in_lieu_items = []
+   if in_lieu_ids:
+       in_lieu_items_response = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID",
+                                                                                       in_lieu_ids).execute()
+       in_lieu_items = in_lieu_items_response.data
 
-    for item in ppmp_items:
-        item_id = str(item.get("ItemID"))
-        available = int(item.get("AvailableQuantity", 0))
-        price = float(item.get("PricePerUnit", 0))
-        cat_val = encode_category(item.get("ItemCategory"))
 
-        # COMBINED UTILIZATION
-        utilized_qty = int(item.get("PendingQuantity", 0)) + int(item.get("FulfilledQuantity", 0))
+   in_lieu_item_quantity = {}
+   for in_lieu_item in in_lieu_items:
+       item_id = str(in_lieu_item["ItemID"])
+       raw_qty = in_lieu_item.get("QuantityReduced")
+       qty = int(raw_qty) if raw_qty is not None else 0
+       in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
 
-        in_lieu_qty = in_lieu_item_quantity.get(item_id, 0)
 
-        historical_planned = available + utilized_qty + in_lieu_qty
+   ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").execute()
+   ppmp_items = ppmp_items_response.data
 
-        if historical_planned > 0:
-            utilization_rate = utilized_qty / historical_planned
-            target_was_cut = 1 if utilization_rate < threshold else 0
 
-            X_train_raw.append([historical_planned, available, utilized_qty, price, cat_val])
-            Y_train.append(target_was_cut)
+   X_train_raw = []
+   Y_train = []
 
-    X_train_named = pd.DataFrame(
-        X_train_raw,
-        columns=["PlannedQuantity", "AvailableQuantity", "UtilizedQuantity", "PricePerUnit", "EncodedCategory"]
-    )
-    X_tr, X_te, Y_tr, Y_te = train_test_split(
-        X_train_named, Y_train, test_size=0.2, random_state=42, stratify=Y_train
-    )
 
-    active_model, metrics = compare_models(X_tr, X_te, Y_tr, Y_te)
-    save_model(active_model)
+   for item in ppmp_items:
+       item_id = str(item.get("ItemID"))
+       available = int(item.get("AvailableQuantity", 0))
+       price = float(item.get("PricePerUnit", 0))
+       cat_val = encode_category(item.get("ItemCategory"))
 
-    with open("in_lieu_model.pkl", "rb") as f:
-        private_supabase.storage.from_("in_lieu_model").upload(
-            "in_lieu_model.pkl", f, {"upsert": "true"})
 
-    private_supabase.storage.from_("in_lieu_model").upload(
-        "in_lieu_model_metrics.json",
-        json.dumps(metrics, default=lambda o: o.item()).encode(),
-        {"upsert": "true", "content-type": "application/json"})
+       # COMBINED UTILIZATION
+       utilized_qty = int(item.get("PendingQuantity", 0)) + int(item.get("FulfilledQuantity", 0))
+       in_lieu_qty = in_lieu_item_quantity.get(item_id, 0)
 
-    return Response({"status": "success"}, status=200)
+
+       historical_planned = available + utilized_qty + in_lieu_qty
+
+
+       if historical_planned > 0:
+           utilization_rate = utilized_qty / historical_planned
+
+
+           target_was_cut = 1 if (utilization_rate < threshold) or (in_lieu_qty > 0) else 0
+
+
+           X_train_raw.append([historical_planned, available, utilized_qty, price, cat_val])
+           Y_train.append(target_was_cut)
+
+
+   X_train_named = pd.DataFrame(
+       X_train_raw,
+       columns=["PlannedQuantity", "AvailableQuantity", "UtilizedQuantity", "PricePerUnit", "EncodedCategory"]
+   )
+
+
+   # APPLYING THE TUNED MODEL (Replacing your old 'model()' placeholder)
+   live_model = RandomForestClassifier(
+       n_estimators=100,
+       max_depth=3,  # Aggressive Pruning: stops infinite tree depth / memorization
+       min_samples_leaf=5,  # Aggressive Pruning: ignores single exceptions
+       random_state=42
+   )
+
+
+
+   live_model.fit(X_train_named, Y_train)
+
+
+   with open("in_lieu_model.pkl", "wb") as f:
+       pickle.dump(live_model, f)
+
+
+   with open("in_lieu_model.pkl", "rb") as f:
+       private_supabase.storage.from_("in_lieu_model").upload(
+           "in_lieu_model.pkl",
+           f,
+           {"upsert": "true"}
+       )
+
+
+   return Response({"status": "success", "message": "Tuned ML Model successfully trained and deployed!"}, status=200)
+
 
 
 @api_view(['GET'])
@@ -1482,7 +1508,7 @@ def get_ml_evaluation(request):
 
             if historical_planned > 0:
                 utilization_rate = utilized_qty / historical_planned
-                target_was_cut = 1 if utilization_rate < threshold else 0
+                target_was_cut = 1 if (utilization_rate < threshold) or (in_lieu_qty > 0) else 0
                 X_raw.append([historical_planned, available, utilized_qty, price, cat_val])
                 Y_raw.append(target_was_cut)
 
@@ -1490,13 +1516,13 @@ def get_ml_evaluation(request):
             return Response({"error": "Not enough data. Please seed more history."})
 
         # 2. Split Data (80% Train, 20% Test)
-        X_train, X_test, Y_train, Y_test = train_test_split(X_raw, Y_raw, test_size=0.2, random_state=42)
+        X_train, X_test, Y_train, Y_test = train_test_split(X_raw, Y_raw, test_size=0.5, random_state=42)
 
         # 3. Define the 3 Algorithms for Comparison
         models = {
-            "Random_Forest (Chosen)": RandomForestClassifier(random_state=42),
-            "Decision_Tree": DecisionTreeClassifier(random_state=42),
-            "Logistic_Regression": LogisticRegression(max_iter=1000, random_state=42)
+            "Random_Forest (Chosen)": RandomForestClassifier(random_state=42, n_estimators=100, max_depth=3, min_samples_leaf=5),
+            "Decision_Tree": DecisionTreeClassifier(random_state=42, max_depth=3, min_samples_leaf=5),
+            "Logistic_Regression": LogisticRegression(max_iter=1000, random_state=42, C=0.5)
         }
 
         comparison_results = {}
