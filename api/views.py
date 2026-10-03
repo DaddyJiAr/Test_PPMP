@@ -1186,6 +1186,13 @@ def update_signatories(request):
         return Response({"error": "Error updating signatories", "signatoryId": signatory_id, "err": f"{e}"}, status=500)
     return Response({"status": "success"}, status=200)
 
+def encode_category(category_string):
+    """Converts string categories into consistent numbers for the AI"""
+    if not category_string:
+        return 0
+    # Converts "IT Equipment" into a consistent number based on its letters
+    return sum(ord(char) for char in str(category_string).strip().lower())
+
 @api_view(['POST'])
 def get_ml_suggestions(request):
     user = get_user(request)
