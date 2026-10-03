@@ -1186,6 +1186,15 @@ def update_signatories(request):
         return Response({"error": "Error updating signatories", "signatoryId": signatory_id, "err": f"{e}"}, status=500)
     return Response({"status": "success"}, status=200)
 
+
+def encode_category(category_string):
+    """Converts string categories into consistent numbers for the AI"""
+    if not category_string:
+        return 0
+    # Converts "IT Equipment" into a consistent number based on its letters
+    return sum(ord(char) for char in str(category_string).strip().lower())
+
+
 @api_view(['POST'])
 def get_ml_suggestions(request):
     user = get_user(request)
@@ -1217,39 +1226,12 @@ def get_ml_suggestions(request):
     ppmp_items = ppmp_items_response.data
     ppmp_items = [ppmp_item for ppmp_item in ppmp_items if
                   not (int(ppmp_item["PlannedQuantity"]) <= 0 or int(ppmp_item["AvailableQuantity"]) <= 0)]
+
     allocated_funds = sum(
         float(item["PlannedQuantity"]) * float(item["PricePerUnit"])
         for item in ppmp_items
     )
     unallocated_funds_total = total_annual_budget - allocated_funds
-
-    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status", "approved").eq(
-        "FiscalYearID", fiscal_year_id).execute()
-    in_lieus = in_lieus.data
-    in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
-
-    open_funds_history = sum(float(il.get("OpenFundsUtilized", 0) or 0) for il in in_lieus)
-
-    in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
-    in_lieu_items = in_lieu_items.data
-
-    in_lieu_item_quantity = {}
-    for in_lieu_item in in_lieu_items:
-        item_id = str(in_lieu_item["ItemID"])
-        raw_qty = in_lieu_item.get("QuantityReduced")
-        qty = int(raw_qty) if raw_qty is not None else 0
-
-        in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
-
-    for i in range(len(ppmp_items)):
-        try:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
-                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
-                                               in_lieu_item_quantity[
-                                                   str(ppmp_items[i]["ItemID"])] if not None else 0
-        except KeyError as e:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["AvailableQuantity"] + \
-                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
 
     if unallocated_funds_total > 0:
         ppmp_items.append({
@@ -1262,28 +1244,28 @@ def get_ml_suggestions(request):
             "PendingQuantity": 0,
             "FulfilledQuantity": 0,
             "FiscalYearID": fiscal_year_id,
-            "ItemCategory": None,
-            "PpmpCategory": None,
-            "InLieuTotalQuantity": open_funds_history
+            "ItemCategory": None
         })
 
     live_scoring_data = []
     for ppmp_item in ppmp_items:
-        item_id_str = str(ppmp_item["ItemID"])
-
-        if ppmp_item["ItemID"] == 0:
-            item_history = ppmp_item["InLieuTotalQuantity"]
-        else:
-            item_history = in_lieu_item_quantity.get(item_id_str, 0)
-            ppmp_item["InLieuTotalQuantity"] = item_history
+        # COMBINED UTILIZATION
+        utilized_qty = int(ppmp_item.get("PendingQuantity", 0)) + int(ppmp_item.get("FulfilledQuantity", 0))
+        # ENCODED CATEGORY
+        cat_val = encode_category(ppmp_item.get("ItemCategory"))
 
         live_scoring_data.append({
             "PlannedQuantity": int(ppmp_item["PlannedQuantity"]),
             "AvailableQuantity": int(ppmp_item["AvailableQuantity"]),
-            "InLieuTotalQuantity": item_history
+            "UtilizedQuantity": utilized_qty,
+            "PricePerUnit": float(ppmp_item.get("PricePerUnit", 0)),
+            "EncodedCategory": cat_val
         })
 
-    df_live = pd.DataFrame(live_scoring_data, columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"])
+    df_live = pd.DataFrame(
+        live_scoring_data,
+        columns=["PlannedQuantity", "AvailableQuantity", "UtilizedQuantity", "PricePerUnit", "EncodedCategory"]
+    )
 
     live_probabilities = get_ai_probabilities(df_live)
 
@@ -1356,74 +1338,19 @@ def get_importances(request):
     if user is None:
         return Response({"error": "User not found"}, status=401)
 
-    year = request.GET.get("year")
-    if not year:
-        return Response({"error": "Year query parameter is required"}, status=400)
-
     try:
         database_model = load_ai_model()
         importances = database_model.feature_importances_
 
-        card1_history_unutilized = round((importances[0] + importances[1]) * 100, 2)
-        card2_history_in_lieu = round(importances[2] * 100, 2)
-
-        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year",
-                                                                                      year).maybe_single().execute()
-
-        card3_live_ai_confidence = 0.00
-
-        if fiscal_year and fiscal_year.data:
-            fiscal_year_id = fiscal_year.data["FiscalYearID"]
-
-            ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID",
-                                                                                     fiscal_year_id).execute()
-            ppmp_items = ppmp_items_response.data
-
-            if ppmp_items:
-                in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").eq(
-                    "FiscalYearID", fiscal_year_id).execute().data
-                in_lieu_ids = [il["InLieuID"] for il in in_lieus] if in_lieus else []
-
-                in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("ItemID, QuantityReduced").in_("InLieuID",
-                                                                                                             in_lieu_ids).execute().data if in_lieu_ids else []
-
-                in_lieu_item_quantity = {}
-                for il_item in in_lieu_items:
-                    item_id = str(il_item["ItemID"])
-                    raw_qty = il_item.get("QuantityReduced")
-                    qty = int(raw_qty) if raw_qty is not None else 0
-                    in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
-
-                live_scoring_data = []
-                for item in ppmp_items:
-                    item_id = str(item.get("ItemID"))
-                    planned = int(item.get("PlannedQuantity", 0))
-                    available = int(item.get("AvailableQuantity", 0))
-
-                    if planned > 0 and available > 0:
-                        live_scoring_data.append({
-                            "PlannedQuantity": planned,
-                            "AvailableQuantity": available,
-                            "InLieuTotalQuantity": in_lieu_item_quantity.get(item_id, 0)
-                        })
-
-                if live_scoring_data:
-                    df_live = pd.DataFrame(
-                        live_scoring_data,
-                        columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"]
-                    )
-
-                    live_probabilities = get_ai_probabilities(df_live)
-
-                    total_score = sum(prob[1] for prob in live_probabilities)
-                    average_score = total_score / len(live_probabilities)
-
-                    card3_live_ai_confidence = round(average_score * 100, 2)
+        # Indices based on X_train:
+        # 0=Planned, 1=Available, 2=Utilized, 3=Price, 4=Category
 
         return Response({
-            "notUtilizedItems": card1_history_unutilized,
-            "frequentInLieuItems": card2_history_in_lieu,
-            "notUtilizedCurrentYear": card3_live_ai_confidence
+            "plannedQuantityWeight": round(importances[0] * 100, 2),
+            "availableQuantityWeight": round(importances[1] * 100, 2),
+            "utilizedQuantityWeight": round(importances[2] * 100, 2),
+            "pricePerUnitWeight": round(importances[3] * 100, 2),
+            "itemCategoryWeight": round(importances[4] * 100, 2)
         })
 
     except Exception as e:
@@ -1438,76 +1365,68 @@ def retrain_ml(request):
     if not check_admin(request):
         return Response({"error": "Unauthorized access"}, status=401)
 
-    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status", "approved").execute()
+    try:
+        threshold = float(request.POST.get('utilizationThreshold', 0.50))
+    except ValueError:
+        threshold = 0.50
+
+    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID, OpenFundsUtilized").eq("Status",
+                                                                                          "approved").execute()
     in_lieus = in_lieus.data
     in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus]
-    in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID", in_lieu_ids).execute()
-    in_lieu_items = in_lieu_items.data
+
+    in_lieu_items = []
+    if in_lieu_ids:
+        in_lieu_items_response = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID",
+                                                                                        in_lieu_ids).execute()
+        in_lieu_items = in_lieu_items_response.data
 
     in_lieu_item_quantity = {}
     for in_lieu_item in in_lieu_items:
         item_id = str(in_lieu_item["ItemID"])
         raw_qty = in_lieu_item.get("QuantityReduced")
         qty = int(raw_qty) if raw_qty is not None else 0
-
         in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
 
-    ppmp_items_response = private_supabase.table("PPMP_ITEM").select(
-        "*").execute()
+    ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").execute()
     ppmp_items = ppmp_items_response.data
-    for i in range (len(ppmp_items)):
-        try:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
-                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"] + \
-                                               in_lieu_item_quantity[
-                                                   str(ppmp_items[i]["ItemID"])] if not None else 0
-        except KeyError as e:
-            ppmp_items[i]["PlannedQuantity"] = ppmp_items[i]["PlannedQuantity"] + ppmp_items[i]["AvailableQuantity"] + \
-                                               ppmp_items[i]["PendingQuantity"] + ppmp_items[i]["FulfilledQuantity"]
-
-    for i in range(len(ppmp_items)):
-        print(ppmp_items[i]["ItemName"], ppmp_items[i]["PlannedQuantity"])
-    in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").execute()
-    in_lieu_ids = [in_lieu["InLieuID"] for in_lieu in in_lieus.data]
-
-    in_lieu_item_quantity = {}
-
-    if in_lieu_ids:
-        in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("ItemID, QuantityReduced").in_("InLieuID",
-                                                                                                     in_lieu_ids).execute()
-        for item in in_lieu_items.data:
-            item_id = str(item["ItemID"])
-            raw_qty = item.get("QuantityReduced")
-            qty = int(raw_qty) if raw_qty is not None else 0
-            in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
 
     X_train_raw = []
     Y_train = []
 
     for item in ppmp_items:
         item_id = str(item.get("ItemID"))
-        planned = int(item.get("PlannedQuantity", 0))
         available = int(item.get("AvailableQuantity", 0))
+        price = float(item.get("PricePerUnit", 0))
+        cat_val = encode_category(item.get("ItemCategory"))
+
+        # COMBINED UTILIZATION
+        utilized_qty = int(item.get("PendingQuantity", 0)) + int(item.get("FulfilledQuantity", 0))
 
         in_lieu_qty = in_lieu_item_quantity.get(item_id, 0)
-        target_was_cut = 1 if in_lieu_qty > 0 else 0
 
-        if planned > 0:
-            X_train_raw.append([planned, available, in_lieu_qty])
+        historical_planned = available + utilized_qty + in_lieu_qty
+
+        if historical_planned > 0:
+            utilization_rate = utilized_qty / historical_planned
+            target_was_cut = 1 if utilization_rate < threshold else 0
+
+            X_train_raw.append([historical_planned, available, utilized_qty, price, cat_val])
             Y_train.append(target_was_cut)
 
     X_train_named = pd.DataFrame(
         X_train_raw,
-        columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"]
+        columns=["PlannedQuantity", "AvailableQuantity", "UtilizedQuantity", "PricePerUnit", "EncodedCategory"]
     )
+
     trained_ai = model(X_train_named, Y_train)
-    save_model(trained_ai) #save locally
+    save_model(trained_ai)
 
     with open("in_lieu_model.pkl", "rb") as f:
-        private_supabase.storage.from_("in_lieu_model").upload( #then upload local file to db
+        private_supabase.storage.from_("in_lieu_model").upload(
             "in_lieu_model.pkl",
             f,
-            {"upsert": "true"} #override
+            {"upsert": "true"}
         )
 
     return Response({"status": "success"}, status=200)
