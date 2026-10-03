@@ -1306,6 +1306,7 @@ def get_importances(request):
     if user is None:
         return Response({"error": "User not found"}, status=401)
 
+
     try:
         database_model = load_ai_model()
         importances = database_model.feature_importances_
