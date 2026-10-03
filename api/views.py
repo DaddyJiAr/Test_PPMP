@@ -1,6 +1,7 @@
 import json
 
 import joblib
+from google.protobuf import timestamp
 from ortools.sat.python import cp_model
 from postgrest import APIError
 from rest_framework.exceptions import APIException
@@ -433,6 +434,7 @@ def dashboard_cards(request):
         }
         for log in logs.data
     ]
+    pr_trend = dashboard_pr_data()
     return Response({"totalAnnualBudget": total_annual_budget,
                      "committedFunds": committed_funds,
                      "availableLieuPoolFunds": available_lieu_pool_funds,
@@ -440,8 +442,41 @@ def dashboard_cards(request):
                      "requestedFunds": requested_funds,
                      "arrivedFunds": arrived_funds,
                      "pendingInLieuCount": pending_in_lieu_count,
-                     "logs": logs
+                     "logs": logs,
+                     "prTrend": pr_trend
                      })
+
+def dashboard_pr_data():
+    fiscal_years = private_supabase.table("FISCAL_YEAR").select("Year", "FiscalYearID").order("Year", desc=True).limit(3).execute()
+    fiscal_years = fiscal_years.data
+    fiscal_year_ids = [fiscal_year["FiscalYearID"] for fiscal_year in fiscal_years]
+    fiscal_year_map = {}
+    for fiscal_year in fiscal_years:
+        fiscal_year_map[fiscal_year["FiscalYearID"]] = fiscal_year["Year"]
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("FiscalYearID", fiscal_year_ids).eq("Status", "Fulfilled").execute()
+    purchase_requests = purchase_requests.data
+    pr_data = {}
+    month_list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    month_data = []
+    for month in month_list:
+        row = {"month": month}
+
+        for fiscal_year in fiscal_years:
+            year = fiscal_year["Year"]
+            row[str(year)] = 0
+
+        month_data.append(row)
+
+    for purchase_request in purchase_requests:
+        date = purchase_request["created_at"]
+        year = fiscal_year_map.get(purchase_request["FiscalYearID"])
+        dt = datetime.fromisoformat(date.replace("Z", "+00:00"))
+        month_index = dt.month - 1
+        month = month_list[month_index]
+        if year is not None:
+            month_data[month_index][str(year)] += 1
+    return month_data
+
 
 @api_view(['POST'])
 def masterlist_data(request):
