@@ -1270,7 +1270,10 @@ def get_ml_suggestions(request):
     live_probabilities = get_ai_probabilities(df_live)
 
     for i, ppmp_item in enumerate(ppmp_items):
-        ppmp_item["AI_Score"] = live_probabilities[i][1]
+        if len(live_probabilities[i]) > 1:
+            ppmp_item["AI_Score"] = float(live_probabilities[i][1])
+        else:
+            ppmp_item["AI_Score"] = 0.0
 
     ppmp_items.sort(
         key=lambda x: x["AI_Score"],
