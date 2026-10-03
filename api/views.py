@@ -453,7 +453,7 @@ def dashboard_pr_data():
     fiscal_year_map = {}
     for fiscal_year in fiscal_years:
         fiscal_year_map[fiscal_year["FiscalYearID"]] = fiscal_year["Year"]
-    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("FiscalYearID", fiscal_year_ids).eq("Status", "Fulfilled").execute()
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("FiscalYearID", fiscal_year_ids).eq("Status", ["Fulfilled", "Pending"]).execute()
     purchase_requests = purchase_requests.data
     pr_data = {}
     month_list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
