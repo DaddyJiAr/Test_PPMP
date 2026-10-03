@@ -10,7 +10,8 @@ from rest_framework.decorators import api_view
 from datetime import datetime
 
 import user
-from ml import reverse_knapsack, get_ai_probabilities, model, save_model, test
+from ml import reverse_knapsack, get_ai_probabilities, model, save_model, test, compare_models, get_model_metrics
+from sklearn.model_selection import train_test_split
 from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items, public_supabase, get_dashboard_cards, \
     get_available_lieu_pool_funds, load_ai_model, check_admin
@@ -450,11 +451,13 @@ def dashboard_pr_data():
     fiscal_years = private_supabase.table("FISCAL_YEAR").select("Year", "FiscalYearID").order("Year", desc=True).limit(3).execute()
     fiscal_years = fiscal_years.data
     fiscal_year_ids = [fiscal_year["FiscalYearID"] for fiscal_year in fiscal_years]
+    print(fiscal_year_ids)
     fiscal_year_map = {}
     for fiscal_year in fiscal_years:
         fiscal_year_map[fiscal_year["FiscalYearID"]] = fiscal_year["Year"]
-    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("FiscalYearID", fiscal_year_ids).eq("Status", ["Fulfilled", "Pending"]).execute()
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("FiscalYearID", fiscal_year_ids).in_("Status", ["Fulfilled", "Pending"]).execute()
     purchase_requests = purchase_requests.data
+    print(purchase_requests)
     pr_data = {}
     month_list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
     month_data = []
@@ -473,6 +476,8 @@ def dashboard_pr_data():
         dt = datetime.fromisoformat(date.replace("Z", "+00:00"))
         month_index = dt.month - 1
         month = month_list[month_index]
+        print(month_index)
+        print(year)
         if year is not None:
             month_data[month_index][str(year)] += 1
     return month_data
@@ -578,6 +583,7 @@ def purchase_request(request):
         "ItemID": item_id,
         "UserID": user_id,
         "RequestQuantity": request_quantity,
+        "FiscalYearID": fiscal_year_id
     }).execute()
     private_supabase.table("PPMP_ITEM").update({
         "AvailableQuantity": (available_quantity - request_quantity),
@@ -1341,6 +1347,7 @@ def get_importances(request):
     try:
         database_model = load_ai_model()
         importances = database_model.feature_importances_
+        metrics = get_model_metrics()
 
         # Indices based on X_train:
         # 0=Planned, 1=Available, 2=Utilized, 3=Price, 4=Category
@@ -1350,7 +1357,8 @@ def get_importances(request):
             "availableQuantityWeight": round(importances[1] * 100, 2),
             "utilizedQuantityWeight": round(importances[2] * 100, 2),
             "pricePerUnitWeight": round(importances[3] * 100, 2),
-            "itemCategoryWeight": round(importances[4] * 100, 2)
+            "itemCategoryWeight": round(importances[4] * 100, 2),
+            "metrics": metrics,
         })
 
     except Exception as e:
@@ -1417,16 +1425,21 @@ def retrain_ml(request):
         X_train_raw,
         columns=["PlannedQuantity", "AvailableQuantity", "UtilizedQuantity", "PricePerUnit", "EncodedCategory"]
     )
+    X_tr, X_te, Y_tr, Y_te = train_test_split(
+        X_train_named, Y_train, test_size=0.2, random_state=42, stratify=Y_train
+    )
 
-    trained_ai = model(X_train_named, Y_train)
-    save_model(trained_ai)
+    active_model, metrics = compare_models(X_tr, X_te, Y_tr, Y_te)
+    save_model(active_model)
 
     with open("in_lieu_model.pkl", "rb") as f:
         private_supabase.storage.from_("in_lieu_model").upload(
-            "in_lieu_model.pkl",
-            f,
-            {"upsert": "true"}
-        )
+            "in_lieu_model.pkl", f, {"upsert": "true"})
+
+    private_supabase.storage.from_("in_lieu_model").upload(
+        "in_lieu_model_metrics.json",
+        json.dumps(metrics, default=lambda o: o.item()).encode(),
+        {"upsert": "true", "content-type": "application/json"})
 
     return Response({"status": "success"}, status=200)
 

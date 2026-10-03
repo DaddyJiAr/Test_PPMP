@@ -2,15 +2,52 @@ import os
 
 import joblib
 import tempfile
+import json
 from ortools.sat.python import cp_model
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 import pandas as pd
 from ortools.sat.python import cp_model
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import f1_score
 
 from api.utils import private_supabase, load_ai_model
 
+def get_model_metrics():
+    raw = private_supabase.storage.from_("in_lieu_model").download("in_lieu_model_metrics.json")
+    return json.loads(raw)
+
+def compare_models(X_train, X_test, Y_train, Y_test, use_model="RandomForest"):
+    candidates = {
+        "RandomForest": RandomForestClassifier(random_state=42),
+        "DecisionTree": DecisionTreeClassifier(random_state=42),
+        "LogisticRegression": LogisticRegression(max_iter=1000),
+    }
+
+    results = {}
+    best_name, best_f1 = None, -1
+
+    for name, clf in candidates.items():
+        clf.fit(X_train, Y_train)
+        preds = clf.predict(X_test)
+        f1 = f1_score(Y_test, preds, zero_division=0)
+
+        results[name] = {
+            "accuracy": accuracy_score(Y_test, preds),
+            "f1": f1,
+            "confusionMatrix": confusion_matrix(Y_test, preds).tolist(),
+            "report": classification_report(Y_test, preds, output_dict=True, zero_division=0),
+        }
+        if f1 > best_f1:
+            best_name, best_f1 = name, f1
+
+    return candidates[use_model], {
+        "selected": use_model,      # model actually saved and used
+        "bestByF1": best_name,      # for your comparison only
+        "models": results,
+    }
 
 def get_x_y(training_rows):
     df = pd.DataFrame(training_rows)
