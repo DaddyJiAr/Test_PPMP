@@ -10,7 +10,8 @@ from rest_framework.decorators import api_view
 from datetime import datetime
 
 import user
-from ml import reverse_knapsack, get_ai_probabilities, model, save_model, test
+from ml import reverse_knapsack, get_ai_probabilities, model, save_model, test, compare_models, get_model_metrics
+from sklearn.model_selection import train_test_split
 from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items, public_supabase, get_dashboard_cards, \
     get_available_lieu_pool_funds, load_ai_model, check_admin
@@ -1341,6 +1342,7 @@ def get_importances(request):
     try:
         database_model = load_ai_model()
         importances = database_model.feature_importances_
+        metrics = get_model_metrics()
 
         # Indices based on X_train:
         # 0=Planned, 1=Available, 2=Utilized, 3=Price, 4=Category
@@ -1350,7 +1352,8 @@ def get_importances(request):
             "availableQuantityWeight": round(importances[1] * 100, 2),
             "utilizedQuantityWeight": round(importances[2] * 100, 2),
             "pricePerUnitWeight": round(importances[3] * 100, 2),
-            "itemCategoryWeight": round(importances[4] * 100, 2)
+            "itemCategoryWeight": round(importances[4] * 100, 2),
+            "metrics": metrics,
         })
 
     except Exception as e:
@@ -1417,9 +1420,20 @@ def retrain_ml(request):
         X_train_raw,
         columns=["PlannedQuantity", "AvailableQuantity", "UtilizedQuantity", "PricePerUnit", "EncodedCategory"]
     )
+    X_tr, X_te, Y_tr, Y_te = train_test_split(
+        X_train_named, Y_train, test_size=0.2, random_state=42, stratify=Y_train
+    )
 
-    trained_ai = model(X_train_named, Y_train)
-    save_model(trained_ai)
+    best_name, best_model, metrics = compare_models(X_tr, X_te, Y_tr, Y_te)
+    save_model(best_model)
+    with open("in_lieu_model.pkl", "rb") as f:
+        private_supabase.storage.from_("in_lieu_model").upload(
+            "in_lieu_model.pkl", f, {"upsert": "true"})
+
+    private_supabase.storage.from_("in_lieu_model").upload(
+        "in_lieu_model_metrics.json",
+        json.dumps(metrics).encode(),
+        {"upsert": "true", "content-type": "application/json"})
 
     with open("in_lieu_model.pkl", "rb") as f:
         private_supabase.storage.from_("in_lieu_model").upload(
