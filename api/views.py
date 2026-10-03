@@ -453,7 +453,7 @@ def dashboard_pr_data():
     fiscal_year_map = {}
     for fiscal_year in fiscal_years:
         fiscal_year_map[fiscal_year["FiscalYearID"]] = fiscal_year["Year"]
-    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("FiscalYearID", fiscal_year_ids).in_("Status", ["Fulfilled", "Pending"]).execute()
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("FiscalYearID", fiscal_year_ids).eq("Status", "Fulfilled").execute()
     purchase_requests = purchase_requests.data
     pr_data = {}
     month_list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -1501,7 +1501,6 @@ def retrain_ml(request):
         columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"]
     )
     trained_ai = model(X_train_named, Y_train)
-    # test(X_train_named, Y_train, trained_ai)
     save_model(trained_ai) #save locally
 
     with open("in_lieu_model.pkl", "rb") as f:
