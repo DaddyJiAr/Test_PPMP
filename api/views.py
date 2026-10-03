@@ -1349,83 +1349,29 @@ def get_ml_suggestions(request):
 
     return Response({"inLieuData": chosen_data})
 
-
 @api_view(['GET'])
 def get_importances(request):
     user = get_user(request)
     if user is None:
         return Response({"error": "User not found"}, status=401)
 
-
     try:
         database_model = load_ai_model()
         importances = database_model.feature_importances_
 
-        card1_history_unutilized = round((importances[0] + importances[1]) * 100, 2)
-        card2_history_in_lieu = round(importances[2] * 100, 2)
-
-        fiscal_year = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year",
-                                                                                      year).maybe_single().execute()
-
-        card3_live_ai_confidence = 0.00
-
-        if fiscal_year and fiscal_year.data:
-            fiscal_year_id = fiscal_year.data["FiscalYearID"]
-
-            ppmp_items_response = private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID",
-                                                                                     fiscal_year_id).execute()
-            ppmp_items = ppmp_items_response.data
-
-            if ppmp_items:
-                in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").eq(
-                    "FiscalYearID", fiscal_year_id).execute().data
-                in_lieu_ids = [il["InLieuID"] for il in in_lieus] if in_lieus else []
-
-                in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("ItemID, QuantityReduced").in_("InLieuID",
-                                                                                                             in_lieu_ids).execute().data if in_lieu_ids else []
-
-                in_lieu_item_quantity = {}
-                for il_item in in_lieu_items:
-                    item_id = str(il_item["ItemID"])
-                    raw_qty = il_item.get("QuantityReduced")
-                    qty = int(raw_qty) if raw_qty is not None else 0
-                    in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + qty
-
-                live_scoring_data = []
-                for item in ppmp_items:
-                    item_id = str(item.get("ItemID"))
-                    planned = int(item.get("PlannedQuantity", 0))
-                    available = int(item.get("AvailableQuantity", 0))
-
-                    if planned > 0 and available > 0:
-                        live_scoring_data.append({
-                            "PlannedQuantity": planned,
-                            "AvailableQuantity": available,
-                            "InLieuTotalQuantity": in_lieu_item_quantity.get(item_id, 0)
-                        })
-
-                if live_scoring_data:
-                    df_live = pd.DataFrame(
-                        live_scoring_data,
-                        columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"]
-                    )
-
-                    live_probabilities = get_ai_probabilities(df_live)
-
-                    total_score = sum(prob[1] for prob in live_probabilities)
-                    average_score = total_score / len(live_probabilities)
-
-                    card3_live_ai_confidence = round(average_score * 100, 2)
+        # Indices based on X_train:
+        # 0=Planned, 1=Available, 2=Utilized, 3=Price, 4=Category
 
         return Response({
-            "notUtilizedItems": card1_history_unutilized,
-            "frequentInLieuItems": card2_history_in_lieu,
-            "notUtilizedCurrentYear": card3_live_ai_confidence
+            "plannedQuantityWeight": round(importances[0] * 100, 2),
+            "availableQuantityWeight": round(importances[1] * 100, 2),
+            "utilizedQuantityWeight": round(importances[2] * 100, 2),
+            "pricePerUnitWeight": round(importances[3] * 100, 2),
+            "itemCategoryWeight": round(importances[4] * 100, 2)
         })
 
     except Exception as e:
         return Response({"error": str(e)}, status=500)
-
 
 @api_view(['POST'])
 def retrain_ml(request):
