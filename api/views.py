@@ -1356,9 +1356,6 @@ def get_importances(request):
     if user is None:
         return Response({"error": "User not found"}, status=401)
 
-    year = request.GET.get("year")
-    if not year:
-        return Response({"error": "Year query parameter is required"}, status=400)
 
     try:
         database_model = load_ai_model()
