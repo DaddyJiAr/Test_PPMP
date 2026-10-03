@@ -12,6 +12,10 @@ from datetime import datetime
 import user
 from ml import reverse_knapsack, get_ai_probabilities, model, save_model, test, compare_models, get_model_metrics
 from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, confusion_matrix, precision_score, recall_score, f1_score
 from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items, public_supabase, get_dashboard_cards, \
     get_available_lieu_pool_funds, load_ai_model, check_admin
@@ -1442,6 +1446,94 @@ def retrain_ml(request):
         {"upsert": "true", "content-type": "application/json"})
 
     return Response({"status": "success"}, status=200)
+
+
+@api_view(['GET'])
+def get_ml_evaluation(request):
+    try:
+        threshold = 0.50
+
+        # 1. Pull data (Keep this matching your exact retrain_ml data extraction)
+        ppmp_items = private_supabase.table("PPMP_ITEM").select("*").execute().data
+        in_lieus = private_supabase.table("IN_LIEU").select("InLieuID").eq("Status", "approved").execute().data
+        in_lieu_ids = [il["InLieuID"] for il in in_lieus]
+
+        in_lieu_item_quantity = {}
+        if in_lieu_ids:
+            in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("*").in_("InLieuID",
+                                                                                   in_lieu_ids).execute().data
+            for il_item in in_lieu_items:
+                item_id = str(il_item["ItemID"])
+                in_lieu_item_quantity[item_id] = in_lieu_item_quantity.get(item_id, 0) + int(
+                    il_item.get("QuantityReduced", 0))
+
+        X_raw = []
+        Y_raw = []
+
+        for item in ppmp_items:
+            item_id = str(item.get("ItemID"))
+            available = int(item.get("AvailableQuantity", 0))
+            price = float(item.get("PricePerUnit", 0))
+            cat_val = encode_category(item.get("ItemCategory"))
+            utilized_qty = int(item.get("PendingQuantity", 0)) + int(item.get("FulfilledQuantity", 0))
+            in_lieu_qty = in_lieu_item_quantity.get(item_id, 0)
+
+            historical_planned = available + utilized_qty + in_lieu_qty
+
+            if historical_planned > 0:
+                utilization_rate = utilized_qty / historical_planned
+                target_was_cut = 1 if utilization_rate < threshold else 0
+                X_raw.append([historical_planned, available, utilized_qty, price, cat_val])
+                Y_raw.append(target_was_cut)
+
+        if len(Y_raw) < 10:
+            return Response({"error": "Not enough data. Please seed more history."})
+
+        # 2. Split Data (80% Train, 20% Test)
+        X_train, X_test, Y_train, Y_test = train_test_split(X_raw, Y_raw, test_size=0.2, random_state=42)
+
+        # 3. Define the 3 Algorithms for Comparison
+        models = {
+            "Random_Forest (Chosen)": RandomForestClassifier(random_state=42),
+            "Decision_Tree": DecisionTreeClassifier(random_state=42),
+            "Logistic_Regression": LogisticRegression(max_iter=1000, random_state=42)
+        }
+
+        comparison_results = {}
+
+        # 4. Train and Test all 3 models automatically
+        for model_name, model in models.items():
+            model.fit(X_train, Y_train)
+            predictions = model.predict(X_test)
+
+            comparison_results[model_name] = {
+                "Accuracy": f"{round(accuracy_score(Y_test, predictions) * 100, 2)}%",
+                "Precision": f"{round(precision_score(Y_test, predictions, zero_division=0) * 100, 2)}%",
+                "Recall": f"{round(recall_score(Y_test, predictions, zero_division=0) * 100, 2)}%",
+                "F1_Score": f"{round(f1_score(Y_test, predictions, zero_division=0) * 100, 2)}%"
+            }
+
+        # 5. Get Confusion Matrix for the Chosen Model (Random Forest)
+        rf_predictions = models["Random_Forest (Chosen)"].predict(X_test)
+        matrix = confusion_matrix(Y_test, rf_predictions)
+
+        if matrix.size == 1:
+            matrix_data = {"True Negatives": int(matrix[0][0]), "False Positives": 0, "False Negatives": 0,
+                           "True Positives": 0}
+        else:
+            matrix_data = {
+                "True Negatives": int(matrix[0][0]), "False Positives": int(matrix[0][1]),
+                "False Negatives": int(matrix[1][0]), "True Positives": int(matrix[1][1])
+            }
+
+        return Response({
+            "Test_Size": f"Trained on {len(Y_train)} items. Tested on {len(Y_test)} unseen items.",
+            "Algorithm_Comparison": comparison_results,
+            "Chosen_Model_Confusion_Matrix": matrix_data
+        })
+
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
 
 @api_view(['POST'])
 def get_supplementals(request):
