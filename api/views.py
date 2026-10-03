@@ -10,7 +10,7 @@ from rest_framework.decorators import api_view
 from datetime import datetime
 
 import user
-from ml import reverse_knapsack, get_ai_probabilities, model, save_model
+from ml import reverse_knapsack, get_ai_probabilities, model, save_model, test
 from user.views import get_admin
 from .utils import private_supabase, get_user, check_fields, get_ppmp_items, public_supabase, get_dashboard_cards, \
     get_available_lieu_pool_funds, load_ai_model, check_admin
@@ -453,7 +453,7 @@ def dashboard_pr_data():
     fiscal_year_map = {}
     for fiscal_year in fiscal_years:
         fiscal_year_map[fiscal_year["FiscalYearID"]] = fiscal_year["Year"]
-    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("FiscalYearID", fiscal_year_ids).eq("Status", "Fulfilled").execute()
+    purchase_requests = private_supabase.table("PURCHASE_REQUEST").select("*").in_("FiscalYearID", fiscal_year_ids).in_("Status", ["Fulfilled", "Pending"]).execute()
     purchase_requests = purchase_requests.data
     pr_data = {}
     month_list = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -1501,6 +1501,7 @@ def retrain_ml(request):
         columns=["PlannedQuantity", "AvailableQuantity", "InLieuTotalQuantity"]
     )
     trained_ai = model(X_train_named, Y_train)
+    # test(X_train_named, Y_train, trained_ai)
     save_model(trained_ai) #save locally
 
     with open("in_lieu_model.pkl", "rb") as f:
