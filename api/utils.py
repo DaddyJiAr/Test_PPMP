@@ -75,7 +75,7 @@ def check_fields(required_fields, request):
 
 def get_ppmp_items(year):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
-    return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).execute()
+    return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).order("created_at", desc=True).execute()
 
 def get_dashboard_cards(year):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("TotalABC", "FiscalYearID").eq("Year",

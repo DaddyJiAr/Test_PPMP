@@ -875,7 +875,7 @@ def get_in_lieu_approvals(request):
     fiscal_year_id = private_supabase.table("FISCAL_YEAR").select("FiscalYearID").eq("Year", year).single().execute()
     fiscal_year_id = fiscal_year_id.data["FiscalYearID"]
     role = user["Role"]
-    in_lieus = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year_id).execute()
+    in_lieus = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year_id).order("created_at", desc=True).execute()
     in_lieu_ids = list({
         in_lieu["InLieuID"]
         for in_lieu in in_lieus.data
