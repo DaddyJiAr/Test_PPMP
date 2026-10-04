@@ -1587,7 +1587,7 @@ def get_supplementals(request):
     ]
     item_categories = get_item_categories()
     ppmp_categories = get_ppmp_categories()
-    supplementals = private_supabase.table("SUPPLEMENTAL").select("*").eq("FiscalYearID", fiscal_year_id).order("created_at").execute()
+    supplementals = private_supabase.table("SUPPLEMENTAL").select("*").eq("FiscalYearID", fiscal_year_id).order("created_at", desc=True).execute()
     supplementals = supplementals.data
     supplemental_ids = [supplemental["SupplementalID"] for supplemental in supplementals]
     supplemental_items = private_supabase.table("ADDITIONAL_SUPPLEMENTAL_ITEM").select("*").in_("SupplementalID", supplemental_ids).execute()
