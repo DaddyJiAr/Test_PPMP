@@ -1,5 +1,7 @@
 import calendar
 import datetime
+import tempfile
+from django.http import FileResponse
 from time import time
 
 from django.http.response import HttpResponse
@@ -195,12 +197,28 @@ def export_formatted_excel(year, options, dean_name):
     if default_ws.title == "Sheet" and len(wb.worksheets) > 1:
         wb.remove(default_ws)
 
-    response = HttpResponse(
-        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    # Save the workbook to a temporary file-like object.
+    output = tempfile.SpooledTemporaryFile(
+        max_size=5 * 1024 * 1024,
+        mode="w+b",
     )
-    response["Content-Disposition"] = f'attachment; filename="{title}.xlsx"'
-    wb.save(response)
-    return response
+
+    try:
+        wb.save(output)
+        output.seek(0)
+    except Exception:
+        output.close()
+        raise
+
+    return FileResponse(
+        output,
+        as_attachment=True,
+        filename=f"{title}.xlsx",
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+    )
 
 def add_revised(wb, year, title, dean_name):
     ws = wb.create_sheet(title)
