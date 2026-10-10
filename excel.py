@@ -1,5 +1,6 @@
 import calendar
 import datetime
+from collections import defaultdict
 import tempfile
 from django.http import FileResponse
 from time import time
@@ -574,6 +575,22 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
 
 def add_in_lieus(wb, fiscal_year, year, dean_name):
     in_liues = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year).execute()
+    in_lieu_ids = [i["InLieuID"] for i in in_liues]
+
+    all_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").in_("InLieuID", in_lieu_ids).execute().data
+    all_items = private_supabase.table("IN_LIEU_ITEM").select("QuantityReduced, ItemID, InLieuID").in_("InLieuID",
+                                                                                                       in_lieu_ids).execute().data
+
+    item_ids = list({i["ItemID"] for i in all_items})
+    ppmp_lookup = {}
+    if item_ids:
+        rows = private_supabase.table("PPMP_ITEM").select("ItemID, ItemName, PricePerUnit").in_("ItemID",
+                                                                                                item_ids).execute().data
+        ppmp_lookup = {r["ItemID"]: r for r in rows}
+
+    additions_by_lieu, items_by_lieu = defaultdict(list), defaultdict(list)
+    for a in all_additions: additions_by_lieu[a["InLieuID"]].append(a)
+    for i in all_items: items_by_lieu[i["InLieuID"]].append(i)
     if not in_liues.data:
         return None
     in_liues = in_liues.data
@@ -586,10 +603,9 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
         ws = wb.create_sheet(ws_title)
         ws.sheet_view.showGridLines = False
 
-        in_lieu_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").eq("InLieuID", in_liue["InLieuID"]).execute()
-        in_lieu_additions = in_lieu_additions.data
-        in_lieu_items = private_supabase.table("IN_LIEU_ITEM").select("QuantityReduced, ItemID").eq("InLieuID", in_liue["InLieuID"]).execute()
-        ppmp_items = {}
+        in_lieu_additions = additions_by_lieu[in_liue["InLieuID"]]
+        in_lieu_items = items_by_lieu[in_liue["InLieuID"]]
+        ppmp_items = ppmp_lookup
         if in_lieu_items.data:
             in_lieu_items = in_lieu_items.data
             in_lieu_item_ids = [in_lieu_item["ItemID"] for in_lieu_item in in_lieu_items]
