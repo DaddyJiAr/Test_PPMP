@@ -596,28 +596,18 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
     in_liues = in_liues.data
     for in_liue in in_liues:
         open_funds_utilized = in_liue["OpenFundsUtilized"]
-        in_lieu_date = pd.to_datetime(in_liue["created_at"])
-        default_title = f"In Lieu of {calendar.month_name[in_lieu_date.month]} {in_lieu_date.day}"
-        ws_title = get_unique_sheet_title(wb, default_title)
-
-        ws = wb.create_sheet(ws_title)
-        ws.sheet_view.showGridLines = False
-
         in_lieu_additions = additions_by_lieu[in_liue["InLieuID"]]
         in_lieu_items = items_by_lieu[in_liue["InLieuID"]]
         ppmp_items = ppmp_lookup
-        if in_lieu_items.data:
-            in_lieu_items = in_lieu_items.data
-            in_lieu_item_ids = [in_lieu_item["ItemID"] for in_lieu_item in in_lieu_items]
-            ppmp_items_response = private_supabase.table("PPMP_ITEM").select("ItemID, ItemName, PricePerUnit").in_("ItemID", in_lieu_item_ids).execute()
-            ppmp_items = {
-                item["ItemID"]: item
-                for item in (ppmp_items_response.data or [])
-            }
-        else:
-            in_lieu_items = []
+
         if not in_lieu_additions:
-            return Response({"error": "No In Lieu Found"}, status=404)
+            continue
+
+        in_lieu_date = pd.to_datetime(in_liue["created_at"])
+        default_title = f"In Lieu of {calendar.month_name[in_lieu_date.month]} {in_lieu_date.day}"
+        ws_title = get_unique_sheet_title(wb, default_title)
+        ws = wb.create_sheet(ws_title)
+        ws.sheet_view.showGridLines = False
 
         total_count = 0
         grand_total_amount = 0
