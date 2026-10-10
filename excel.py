@@ -575,7 +575,7 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
 
 def add_in_lieus(wb, fiscal_year, year, dean_name):
     in_liues = private_supabase.table("IN_LIEU").select("*").eq("FiscalYearID", fiscal_year).execute()
-    in_lieu_ids = [i["InLieuID"] for i in in_liues]
+    in_lieu_ids = [i["InLieuID"] for i in in_liues.data]
 
     all_additions = private_supabase.table("IN_LIEU_ADDITION").select("*").in_("InLieuID", in_lieu_ids).execute().data
     all_items = private_supabase.table("IN_LIEU_ITEM").select("QuantityReduced, ItemID, InLieuID").in_("InLieuID",
