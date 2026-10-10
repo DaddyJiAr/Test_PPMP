@@ -395,7 +395,10 @@ def export(request):
     year = request.POST["year"]
     options = request.POST["options"]
     create_procurement_log("PPMP", "export", year, user["FullName"], "")
-    return export_formatted_excel(year, options, get_admin())
+    try:
+        return export_formatted_excel(year, options, get_admin())
+    except Exception as e:
+        return Response({"error": e.args[0]}, status=400)
 
 @api_view(['GET'])
 def fiscal_years(request):

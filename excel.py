@@ -362,8 +362,8 @@ def add_supplemental(wb, fiscal_year, year, dean_name):
     for supplemental in supplementals:
         supplemental_id = supplemental["SupplementalID"]
         supplemental_date = pd.to_datetime(supplemental["created_at"])
-        title_date = supplemental_date.strftime('%m-%d-%Y')
-        default_title = f"Supplemental of {title_date}"
+        title_date = supplemental_date.strftime('%m-%d')
+        default_title = f"Supplemental {title_date}"
         ws_title = get_unique_sheet_title(wb, default_title)
 
         ws = wb.create_sheet(ws_title)
@@ -562,7 +562,7 @@ def add_in_lieus(wb, fiscal_year, year, dean_name):
     for in_liue in in_liues:
         open_funds_utilized = in_liue["OpenFundsUtilized"]
         in_lieu_date = pd.to_datetime(in_liue["created_at"])
-        default_title = f"In Lieu as of {calendar.month_name[in_lieu_date.month]} {in_lieu_date.day}"
+        default_title = f"In Lieu of {calendar.month_name[in_lieu_date.month]} {in_lieu_date.day}"
         ws_title = get_unique_sheet_title(wb, default_title)
 
         ws = wb.create_sheet(ws_title)
@@ -673,7 +673,7 @@ def add_purchase_request(wb, fiscal_year, year, dean_name):
     for purchase_request in purchase_requests:
         purchase_request_date = pd.to_datetime(purchase_request["created_at"])
 
-        title_date = purchase_request_date.strftime('%m-%d-%Y')
+        title_date = purchase_request_date.strftime('%m-%d')
         purchase_request_date = purchase_request_date.strftime('%m/%d/%Y')
 
         default_title = f"Purchase Request {title_date}"
