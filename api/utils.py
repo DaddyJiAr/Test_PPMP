@@ -5,6 +5,8 @@ import os
 import tempfile
 import joblib
 from supabase import create_client
+import time
+import httpx
 
 load_dotenv()
 url = os.getenv("SUPABASE_URL")
@@ -74,8 +76,30 @@ def check_fields(required_fields, request):
         return None
 
 def get_ppmp_items(year):
-    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
-    return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).order("created_at", desc=True).execute()
+    fiscal_year = execute_read_with_retry(
+        lambda: private_supabase.table("FISCAL_YEAR")
+        .select("FiscalYearID")
+        .eq("Year", year)
+        .single()
+    )
+
+    return execute_read_with_retry(
+        lambda: private_supabase.table("PPMP_ITEM")
+        .select("*")
+        .eq("FiscalYearID", fiscal_year.data["FiscalYearID"])
+        .order("created_at", desc=True)
+    )
+
+def execute_read_with_retry(query_factory, attempts=3):
+    for attempt in range(attempts):
+        try:
+            return query_factory().execute()
+
+        except httpx.TransportError:
+            if attempt == attempts - 1:
+                raise
+
+            time.sleep(0.25 * (2 ** attempt))
 
 def get_dashboard_cards(year):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("TotalABC", "FiscalYearID").eq("Year",
