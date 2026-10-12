@@ -4,15 +4,30 @@ from dotenv import load_dotenv
 import os
 import tempfile
 import joblib
-from supabase import create_client
-import time
 import httpx
+from supabase import create_client, ClientOptions
 
 load_dotenv()
 url = os.getenv("SUPABASE_URL")
 
-public_supabase = create_client(url, os.getenv("SUPABASE_ANON_KEY"))
-private_supabase = create_client(url, os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+def make_client(key):
+    return create_client(
+        url,
+        key,
+        options=ClientOptions(
+            httpx_client=httpx.Client(
+                http2=False,  # no shared multiplexed connection
+                timeout=httpx.Timeout(30.0),
+                limits=httpx.Limits(
+                    max_keepalive_connections=10,
+                    keepalive_expiry=5,  # drop idle connections before the server does
+                ),
+            )
+        ),
+    )
+
+public_supabase = make_client(os.getenv("SUPABASE_ANON_KEY"))
+private_supabase = make_client(os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
 
 def create_supabase():
     return create_client(url, os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
@@ -76,30 +91,8 @@ def check_fields(required_fields, request):
         return None
 
 def get_ppmp_items(year):
-    fiscal_year = execute_read_with_retry(
-        lambda: private_supabase.table("FISCAL_YEAR")
-        .select("FiscalYearID")
-        .eq("Year", year)
-        .single()
-    )
-
-    return execute_read_with_retry(
-        lambda: private_supabase.table("PPMP_ITEM")
-        .select("*")
-        .eq("FiscalYearID", fiscal_year.data["FiscalYearID"])
-        .order("created_at", desc=True)
-    )
-
-def execute_read_with_retry(query_factory, attempts=3):
-    for attempt in range(attempts):
-        try:
-            return query_factory().execute()
-
-        except httpx.TransportError:
-            if attempt == attempts - 1:
-                raise
-
-            time.sleep(0.25 * (2 ** attempt))
+    fiscal_year = private_supabase.table("FISCAL_YEAR").select("*").eq("Year", year).single().execute()
+    return private_supabase.table("PPMP_ITEM").select("*").eq("FiscalYearID", fiscal_year.data["FiscalYearID"]).order("created_at", desc=True).execute()
 
 def get_dashboard_cards(year):
     fiscal_year = private_supabase.table("FISCAL_YEAR").select("TotalABC", "FiscalYearID").eq("Year",
