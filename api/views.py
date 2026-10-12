@@ -431,7 +431,14 @@ def dashboard_cards(request):
     except APIException as e:
         return Response({"error": "Fiscal year not found"}, status=404)
 
-    logs = private_supabase.table("PROCUREMENT_LOG").select("*").order("created_at", desc=False).execute()
+    logs = (
+        private_supabase.table("PROCUREMENT_LOG")
+        .select("*")
+        .order("created_at", desc=True)  # newest first
+        .limit(100)  # only what the dashboard needs
+        .execute()
+    )
+    logs.data.reverse()
     logs = [
         {
             "actionType": log["ActionType"].capitalize(),
