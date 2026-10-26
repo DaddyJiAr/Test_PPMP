@@ -14,7 +14,7 @@ from openpyxl.chart.text import RichText
 from openpyxl.chart.layout import Layout, ManualLayout
 from openpyxl.drawing.text import Paragraph, ParagraphProperties, CharacterProperties, RichTextProperties
 import pandas as pd
-from api.utils import private_supabase, get_dashboard_cards
+from api.utils import private_supabase, get_dashboard_cards, get_original_ppmp_items
 from api.views import get_ppmp_items
 from rest_framework.response import Response
 
@@ -172,6 +172,8 @@ def upload_excel(df, total_ABC, year, ppmp_category="Office Supply"):
         })
     try:
         private_supabase.table("PPMP_ITEM").insert(records).execute()
+        #revision addition
+        private_supabase.table("ORIGINAL_PPMP_ITEM").insert(records).execute()
     except TypeError as e:
         return e
 
@@ -181,7 +183,9 @@ def export_formatted_excel(year, options, dean_name):
         return Response({"error": "Fiscal year missing"},status=404)
     fiscal_year = fiscal_year.data["FiscalYearID"]
     title = "CICT-PPMP-" + year
+    want_original = "original_ppmp" in options
     want_revised = "revised_ppmp" in options
+    want_remaining = "ppmp_remaining" in options
     want_supplemental = "supplemental_ppmp" in options
     want_in_lieus = "in_lieus" in options
     want_purchase_requests = "purchase_requests" in options
@@ -189,7 +193,9 @@ def export_formatted_excel(year, options, dean_name):
     wb = Workbook()
     default_ws = wb.active
 
+    if want_original: add_revised(wb, year, title, dean_name)
     if want_revised: add_revised(wb, year, title, dean_name)
+    if want_remaining: add_revised(wb, year, title, dean_name)
     if want_supplemental: add_supplemental(wb, fiscal_year, title, dean_name)
     if want_in_lieus: add_in_lieus(wb, fiscal_year, year, dean_name)
     if want_purchase_requests: add_purchase_request(wb, fiscal_year, year, dean_name)
@@ -220,6 +226,158 @@ def export_formatted_excel(year, options, dean_name):
             "spreadsheetml.sheet"
         ),
     )
+def add_original(wb, year, title, dean_name):
+    title = "ORIGINAL-CICT-PPMP-" + year
+    ws = wb.create_sheet(title)
+    ws.sheet_view.showGridLines = False
+    default_font = Font(name="Arial", size=10)
+    total_count = 0
+    grand_total_amount = 0
+    start_row = 0
+    end_row = 0
+    start_column = 1
+    end_column = 0
+    start_number_column = 0
+    end_number_column = 0
+    start_decimal_column = 0
+    end_decimal_column = 0
+
+    current_row = 2
+    current_column = 1
+    (
+        current_column,
+        current_row,
+        start_number_column,
+        end_number_column,
+        start_decimal_column,
+        end_decimal_column,
+        end_column,
+    ) = set_revised_header(ws, current_column, current_row, year)
+    ppmp_items = get_original_ppmp_items(year)
+
+    office_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Office Supply"]
+    lab_supplies = [ppmp_item for ppmp_item in ppmp_items.data if
+                    ppmp_item["PpmpCategory"] == "Laboratory Supply/Equipment"]
+
+    office_categories = [ppmp_item["ItemCategory"] for ppmp_item in office_supplies]
+    office_categories = list(dict.fromkeys(office_categories))
+    lab_categories = [ppmp_item["ItemCategory"] for ppmp_item in lab_supplies]
+    lab_categories = list(dict.fromkeys(lab_categories))
+    office_supplies_dict = {}
+
+    for office_category in office_categories:
+        category_items = [
+            item
+            for item in office_supplies
+            if item["ItemCategory"] == office_category
+        ]
+
+        office_supplies_dict[office_category] = [
+            {
+                "Seq.": i,
+                "GENERAL DESCRIPTION": item["ItemName"],
+                "Unit of Measure": item["UnitName"],
+                "January": item["PlannedQuantity"],
+                "TOTAL": item["PlannedQuantity"],
+                "Price as per Catalogue": item["PricePerUnit"],
+                "TOTAL AMOUNT": item["PlannedQuantity"] * item["PricePerUnit"],
+            }
+            for i, item in enumerate(category_items, start=1)
+        ]
+
+    office_supplies = office_supplies_dict
+
+    lab_supplies_dict = {}
+
+    for lab_category in lab_categories:
+        category_items = [
+            item
+            for item in lab_supplies
+            if item["ItemCategory"] == lab_category
+        ]
+
+        lab_supplies_dict[lab_category] = [
+            {
+                "Seq.": i,
+                "GENERAL DESCRIPTION": item["ItemName"],
+                "Unit of Measure": item["UnitName"],
+                "January": item["PlannedQuantity"],
+                "TOTAL": item["PlannedQuantity"],
+                "Price as per Catalogue": item["PricePerUnit"],
+                "TOTAL AMOUNT": item["PlannedQuantity"] * item["PricePerUnit"],
+            }
+            for i, item in enumerate(category_items, start=1)
+        ]
+
+    lab_supplies = lab_supplies_dict
+
+    current_row += 2
+    current_column = 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "OFFICE SUPPLIES"
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
+                       col_end=current_column + 1)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+
+    start_row = current_row
+    total_count1, grand_total_amount1 = 0, 0
+    total_count2, grand_total_amount2 = 0, 0
+    total_count1, grand_total_amount1, current_row = ppmp_item_category(office_supplies, ws, current_row)
+    if lab_supplies:
+        current_row += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "LAB SUPPLIES"
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+        set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
+                           col_end=current_column + 1)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+        total_count2, grand_total_amount2, current_row = ppmp_item_category(lab_supplies, ws, current_row)
+    total_count = total_count1 + total_count2
+    grand_total_amount = grand_total_amount1 + grand_total_amount2
+    current_row += 1
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "GRAND TOTAL:"
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",
+                       underline="single")
+
+    current_column = 16
+    ws[f"{num_to_letter(current_column)}{current_row}"] = total_count
+    set_border_to_cell(ws, current_column, current_row)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+    current_column += 2
+    ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
+    set_border_to_cell(ws, current_column, current_row)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+
+    gray_fill = PatternFill(
+        fill_type="solid",
+        start_color="A6A6A6",
+        end_color="A6A6A6"
+    )
+
+    for cell in ws[current_row]:
+        cell.fill = gray_fill
+
+    end_row = current_row
+
+    current_column, current_row = set_revised_signatories(ws, current_column, current_row, dean_name)
+
+    set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
+    set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
+
+    set_revised_dimensions(ws)
+
+    set_border_to_cell(
+        ws,
+        col_start=start_column,
+        row_start=start_row,
+        col_end=end_column,
+        row_end=end_row
+    )
 
 def add_revised(wb, year, title, dean_name):
     ws = wb.create_sheet(title)
@@ -248,6 +406,159 @@ def add_revised(wb, year, title, dean_name):
         end_column,
     ) = set_revised_header(ws, current_column, current_row, year)
     ppmp_items = get_ppmp_items(year)
+
+    office_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Office Supply"]
+    lab_supplies = [ppmp_item for ppmp_item in ppmp_items.data if
+                    ppmp_item["PpmpCategory"] == "Laboratory Supply/Equipment"]
+
+    office_categories = [ppmp_item["ItemCategory"] for ppmp_item in office_supplies]
+    office_categories = list(dict.fromkeys(office_categories))
+    lab_categories = [ppmp_item["ItemCategory"] for ppmp_item in lab_supplies]
+    lab_categories = list(dict.fromkeys(lab_categories))
+    office_supplies_dict = {}
+
+    for office_category in office_categories:
+        category_items = [
+            item
+            for item in office_supplies
+            if item["ItemCategory"] == office_category
+        ]
+
+        office_supplies_dict[office_category] = [
+            {
+                "Seq.": i,
+                "GENERAL DESCRIPTION": item["ItemName"],
+                "Unit of Measure": item["UnitName"],
+                "January": item["PlannedQuantity"],
+                "TOTAL": item["PlannedQuantity"],
+                "Price as per Catalogue": item["PricePerUnit"],
+                "TOTAL AMOUNT": item["PlannedQuantity"] * item["PricePerUnit"],
+            }
+            for i, item in enumerate(category_items, start=1)
+        ]
+
+    office_supplies = office_supplies_dict
+
+    lab_supplies_dict = {}
+
+    for lab_category in lab_categories:
+        category_items = [
+            item
+            for item in lab_supplies
+            if item["ItemCategory"] == lab_category
+        ]
+
+        lab_supplies_dict[lab_category] = [
+            {
+                "Seq.": i,
+                "GENERAL DESCRIPTION": item["ItemName"],
+                "Unit of Measure": item["UnitName"],
+                "January": item["PlannedQuantity"],
+                "TOTAL": item["PlannedQuantity"],
+                "Price as per Catalogue": item["PricePerUnit"],
+                "TOTAL AMOUNT": item["PlannedQuantity"] * item["PricePerUnit"],
+            }
+            for i, item in enumerate(category_items, start=1)
+        ]
+
+    lab_supplies = lab_supplies_dict
+
+    current_row += 2
+    current_column = 1
+
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "OFFICE SUPPLIES"
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
+                       col_end=current_column + 1)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+
+    start_row = current_row
+    total_count1, grand_total_amount1 = 0, 0
+    total_count2, grand_total_amount2 = 0, 0
+    total_count1, grand_total_amount1, current_row = ppmp_item_category(office_supplies, ws, current_row)
+    if lab_supplies:
+        current_row += 1
+        ws[f"{num_to_letter(current_column)}{current_row}"] = "LAB SUPPLIES"
+        ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+        set_border_to_cell(ws, current_column, current_row, left=None, right=None, top=None, bottom=None,
+                           col_end=current_column + 1)
+        set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center")
+        total_count2, grand_total_amount2, current_row = ppmp_item_category(lab_supplies, ws, current_row)
+    total_count = total_count1 + total_count2
+    grand_total_amount = grand_total_amount1 + grand_total_amount2
+    current_row += 1
+    current_column = 1
+    ws[f"{num_to_letter(current_column)}{current_row}"] = "GRAND TOTAL:"
+    ws.merge_cells(f"{num_to_letter(current_column)}{current_row}:{num_to_letter(current_column + 1)}{current_row}")
+    set_border_to_cell(ws, current_column, current_row, col_end=current_column + 1)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center",
+                       underline="single")
+
+    current_column = 16
+    ws[f"{num_to_letter(current_column)}{current_row}"] = total_count
+    set_border_to_cell(ws, current_column, current_row)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+    current_column += 2
+    ws[f"{num_to_letter(current_column)}{current_row}"] = grand_total_amount
+    set_border_to_cell(ws, current_column, current_row)
+    set_format_to_cell(ws, current_column, current_row, "Arial Narrow", 10, True, False, "center", "center", )
+
+
+    gray_fill = PatternFill(
+        fill_type="solid",
+        start_color="A6A6A6",
+        end_color="A6A6A6"
+    )
+
+    for cell in ws[current_row]:
+        cell.fill = gray_fill
+
+    end_row = current_row
+
+    current_column, current_row = set_revised_signatories(ws, current_column, current_row, dean_name)
+
+    set_number_comma(ws, start_number_column, end_number_column, start_row, end_row)
+    set_number_decimal(ws, start_decimal_column, end_decimal_column, start_row, end_row)
+
+    set_revised_dimensions(ws)
+
+    set_border_to_cell(
+        ws,
+        col_start=start_column,
+        row_start=start_row,
+        col_end=end_column,
+        row_end=end_row
+    )
+
+def add_remaining(wb, year, title, dean_name):
+    title = "REMAINING-CICT-PPMP-" + year
+    ws = wb.create_sheet(title)
+    ws.sheet_view.showGridLines = False
+    default_font = Font(name="Arial", size=10)
+    total_count = 0
+    grand_total_amount = 0
+    start_row = 0
+    end_row = 0
+    start_column = 1
+    end_column = 0
+    start_number_column = 0
+    end_number_column = 0
+    start_decimal_column = 0
+    end_decimal_column = 0
+
+    current_row = 2
+    current_column = 1
+    (
+        current_column,
+        current_row,
+        start_number_column,
+        end_number_column,
+        start_decimal_column,
+        end_decimal_column,
+        end_column,
+    ) = set_revised_header(ws, current_column, current_row, year)
+    ppmp_items = get_original_ppmp_items(year)
 
     office_supplies = [ppmp_item for ppmp_item in ppmp_items.data if ppmp_item["PpmpCategory"] == "Office Supply"]
     lab_supplies = [ppmp_item for ppmp_item in ppmp_items.data if
