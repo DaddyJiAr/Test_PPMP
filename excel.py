@@ -193,9 +193,9 @@ def export_formatted_excel(year, options, dean_name):
     wb = Workbook()
     default_ws = wb.active
 
-    if want_original: add_revised(wb, year, title, dean_name)
+    if want_original: add_original(wb, year, title, dean_name)
     if want_revised: add_revised(wb, year, title, dean_name)
-    if want_remaining: add_revised(wb, year, title, dean_name)
+    if want_remaining: add_remaining(wb, year, title, dean_name)
     if want_supplemental: add_supplemental(wb, fiscal_year, title, dean_name)
     if want_in_lieus: add_in_lieus(wb, fiscal_year, year, dean_name)
     if want_purchase_requests: add_purchase_request(wb, fiscal_year, year, dean_name)
