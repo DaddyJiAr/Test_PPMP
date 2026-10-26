@@ -1739,7 +1739,7 @@ def set_in_lieu_signatories(ws, current_column, current_row, dean_name):
     current_column += 2
 
     head_asset = [
-        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Head, Asset Management Unit"
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Head, Asset Management Office"
     ]
     if head_asset:
         head_asset = head_asset[0]
@@ -1751,7 +1751,7 @@ def set_in_lieu_signatories(ws, current_column, current_row, dean_name):
     current_column += 4
 
     head_procurement = [
-        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Head, Procurement Unit"
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Head, Procurement Office"
     ]
     if head_procurement:
         head_procurement = head_procurement[0]
@@ -1763,7 +1763,7 @@ def set_in_lieu_signatories(ws, current_column, current_row, dean_name):
     current_column += 4
 
     budget_officer = [
-        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "Budget Officer"
+        signatory["FullName"] for signatory in ppmp_signatories if signatory["PositionTitle"] == "University Budget Officer"
     ]
     if budget_officer:
         budget_officer = budget_officer[0]
